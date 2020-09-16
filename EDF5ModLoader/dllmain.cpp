@@ -255,7 +255,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		PluginInfo *selfInfo = new PluginInfo;
 		selfInfo->infoVersion = PluginInfo::MaxInfoVer;
 		selfInfo->name = "EDF5ModLoader";
-		selfInfo->version = PLUG_VER(1, 0, 2, 0);
+		selfInfo->version = PLUG_VER(1, 0, 2, 1);
 		PluginData *selfData = new PluginData;
 		selfData->info = selfInfo;
 		selfData->module = hModule;
@@ -304,7 +304,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			// Error
 			PLOG_ERROR << "Failed to setup EDF5.exe+27380 hook: " << funchook_error_message(funchook) << " (" << rv << ")";
 		}
-
+		/*
 		// Add logging stub hook
 		PLOG_INFO << "Hooking EDF5.exe+27680 (Logging stub hook)";
 		fnk27680_orig = (fnk27680_func)((PBYTE)hmodEXE + 0x27680);
@@ -313,7 +313,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			// Error
 			PLOG_ERROR << "Failed to setup EDF5.exe+27680 hook: " << funchook_error_message(funchook) << " (" << rv << ")";
 		}
-
+		//*/
 		// Install hooks
 		rv = funchook_install(funchook, 0);
 		if (rv != 0) {
