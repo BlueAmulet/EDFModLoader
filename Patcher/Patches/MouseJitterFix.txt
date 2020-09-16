@@ -1,0 +1,3 @@
+; Author: Souzooka
+2ED698: 66 0F 1F 44 00
+5A24D7: 66 0F 1F 44 00

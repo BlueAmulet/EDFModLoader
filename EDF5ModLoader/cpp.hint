@@ -1,0 +1,2 @@
+#define EMLAPI __declspec(dllexport)
+#define EMLAPI __declspec(dllimport)

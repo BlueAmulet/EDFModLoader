@@ -1,0 +1,3 @@
+; Author: Souzooka
+491480: B0[80]0F B6 C0 90 ; Maximum amount of characters in chat message. Default 0x80 (128)
+49546E: 41 B8[A8 02 00 00]90 44 89 86 40 09 00 00 ; Width of the chat dialog. Default 0x2A8 (680)
