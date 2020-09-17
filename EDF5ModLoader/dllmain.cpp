@@ -191,6 +191,24 @@ static void *__fastcall fnk27380_hook(void *unk, const wchar_t *path, unsigned l
 extern "C" {
 void __fastcall fnk27680_hook(const wchar_t *fmt, ...); // wrapper to preserve registers
 void __fastcall fnk27680_hook_main(const char *fmt, ...); // actual logging implementaton
+
+// Thread Local Storage to preserve/restore registers in wrapper
+// TODO: Move all of this to winmm.asm
+__declspec(thread) UINT64 save_ret;
+__declspec(thread) UINT64 save_rax;
+__declspec(thread) UINT64 save_rcx;
+__declspec(thread) UINT64 save_rdx;
+__declspec(thread) UINT64 save_r8;
+__declspec(thread) UINT64 save_r9;
+__declspec(thread) UINT64 save_r10;
+__declspec(thread) UINT64 save_r11;
+
+__declspec(thread) M128A save_xmm0;
+__declspec(thread) M128A save_xmm1;
+__declspec(thread) M128A save_xmm2;
+__declspec(thread) M128A save_xmm3;
+__declspec(thread) M128A save_xmm4;
+__declspec(thread) M128A save_xmm5;
 }
 
 void __fastcall fnk27680_hook_main(const char *fmt, ...) {
@@ -248,14 +266,18 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		// Open Log file
 		DeleteFileW(L"ModLoader.log");
 		DeleteFileW(L"game.log");
+#ifdef NDEBUG
+		plog::init(plog::info, &mlLogOutput);
+#else
 		plog::init(plog::debug, &mlLogOutput);
-		plog::init<1>(plog::debug, &gameLogOutput);
+#endif
+		plog::init<1>(plog::info, &gameLogOutput);
 
 		// Add ourself to plugin list for future reference
 		PluginInfo *selfInfo = new PluginInfo;
 		selfInfo->infoVersion = PluginInfo::MaxInfoVer;
 		selfInfo->name = "EDF5ModLoader";
-		selfInfo->version = PLUG_VER(1, 0, 2, 1);
+		selfInfo->version = PLUG_VER(1, 0, 3, 0);
 		PluginData *selfData = new PluginData;
 		selfData->info = selfInfo;
 		selfData->module = hModule;
@@ -304,16 +326,16 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			// Error
 			PLOG_ERROR << "Failed to setup EDF5.exe+27380 hook: " << funchook_error_message(funchook) << " (" << rv << ")";
 		}
-		/*
-		// Add logging stub hook
-		PLOG_INFO << "Hooking EDF5.exe+27680 (Logging stub hook)";
+
+		// Add internal logging hook
+		PLOG_INFO << "Hooking EDF5.exe+27680 (Interal logging hook)";
 		fnk27680_orig = (fnk27680_func)((PBYTE)hmodEXE + 0x27680);
 		rv = funchook_prepare(funchook, (void**)&fnk27680_orig, fnk27680_hook);
 		if (rv != 0) {
 			// Error
 			PLOG_ERROR << "Failed to setup EDF5.exe+27680 hook: " << funchook_error_message(funchook) << " (" << rv << ")";
 		}
-		//*/
+
 		// Install hooks
 		rv = funchook_install(funchook, 0);
 		if (rv != 0) {
