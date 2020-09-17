@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <Windows.h>
+#include <shlwapi.h>
 #include <cstdio>
 #include <funchook.h>
 #include <memory.h>
@@ -45,6 +46,17 @@ static inline BOOL FileExistsW(LPCWSTR szPath) {
 	DWORD dwAttrib = GetFileAttributesW(szPath);
 	return (dwAttrib != INVALID_FILE_ATTRIBUTES && !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
 }
+
+static BOOL GetPrivateProfileBoolW(LPCWSTR lpAppName, LPCWSTR lpKeyName, BOOL bDefault, LPCWSTR lpFileName) {
+	WCHAR boolStr[6];
+	DWORD strlen = GetPrivateProfileStringW(lpAppName, lpKeyName, bDefault ? L"True" : L"False", boolStr, _countof(boolStr), lpFileName);
+	return (CompareStringW(LOCALE_INVARIANT, NORM_IGNORECASE, boolStr, strlen, L"True", 4) == CSTR_EQUAL);
+}
+
+// Configuration
+static BOOL LoadPluginsB = TRUE;
+static BOOL Redirect = TRUE;
+static BOOL GameLog = FALSE;
 
 // Search and load all *.dll files in Mods\Plugins\ folder
 static void LoadPlugins(void) {
@@ -148,7 +160,11 @@ static int __fastcall fnk3d8f00_hook(char unk) {
 		PLOG_INFO << "Additional initialization";
 
 		// Load plugins
-		LoadPlugins();
+		if (LoadPluginsB) {
+			LoadPlugins();
+		} else {
+			PLOG_INFO << "Plugin loading disabled";
+		}
 
 		PLOG_INFO << "Initialization finished";
 	}
@@ -263,15 +279,28 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		// For optimization
 		DisableThreadLibraryCalls(hModule);
 
+		// Calculate ini path
+		WCHAR iniPath[MAX_PATH];
+		GetModuleFileNameW(hModule, iniPath, _countof(iniPath));
+		PathRemoveFileSpecW(iniPath);
+		wcscat(iniPath, L"\\ModLoader.ini");
+
+		// Read configuration
+		LoadPluginsB = GetPrivateProfileBoolW(L"ModLoader", L"LoadPlugins", LoadPluginsB, iniPath);
+		Redirect = GetPrivateProfileBoolW(L"ModLoader", L"Redirect", Redirect, iniPath);
+		GameLog = GetPrivateProfileBoolW(L"ModLoader", L"GameLog", GameLog, iniPath);
+
 		// Open Log file
 		DeleteFileW(L"ModLoader.log");
-		DeleteFileW(L"game.log");
 #ifdef NDEBUG
 		plog::init(plog::info, &mlLogOutput);
 #else
 		plog::init(plog::debug, &mlLogOutput);
 #endif
-		plog::init<1>(plog::info, &gameLogOutput);
+		if (GameLog) {
+			DeleteFileW(L"game.log");
+			plog::init<1>(plog::info, &gameLogOutput);
+		}
 
 		// Add ourself to plugin list for future reference
 		PluginInfo *selfInfo = new PluginInfo;
@@ -319,21 +348,29 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		}
 
 		// Add Mods folder redirector
-		PLOG_INFO << "Hooking EDF5.exe+27380 (Mods folder redirector)";
-		fnk27380_orig = (fnk27380_func)((PBYTE)hmodEXE + 0x27380);
-		rv = funchook_prepare(funchook, (void**)&fnk27380_orig, fnk27380_hook);
-		if (rv != 0) {
-			// Error
-			PLOG_ERROR << "Failed to setup EDF5.exe+27380 hook: " << funchook_error_message(funchook) << " (" << rv << ")";
+		if (Redirect) {
+			PLOG_INFO << "Hooking EDF5.exe+27380 (Mods folder redirector)";
+			fnk27380_orig = (fnk27380_func)((PBYTE)hmodEXE + 0x27380);
+			rv = funchook_prepare(funchook, (void**)&fnk27380_orig, fnk27380_hook);
+			if (rv != 0) {
+				// Error
+				PLOG_ERROR << "Failed to setup EDF5.exe+27380 hook: " << funchook_error_message(funchook) << " (" << rv << ")";
+			}
+		} else {
+			PLOG_INFO << "Skipping EDF5.exe+27380 hook (Mods folder redirector)";
 		}
 
 		// Add internal logging hook
-		PLOG_INFO << "Hooking EDF5.exe+27680 (Interal logging hook)";
-		fnk27680_orig = (fnk27680_func)((PBYTE)hmodEXE + 0x27680);
-		rv = funchook_prepare(funchook, (void**)&fnk27680_orig, fnk27680_hook);
-		if (rv != 0) {
-			// Error
-			PLOG_ERROR << "Failed to setup EDF5.exe+27680 hook: " << funchook_error_message(funchook) << " (" << rv << ")";
+		if (GameLog) {
+			PLOG_INFO << "Hooking EDF5.exe+27680 (Interal logging hook)";
+			fnk27680_orig = (fnk27680_func)((PBYTE)hmodEXE + 0x27680);
+			rv = funchook_prepare(funchook, (void**)&fnk27680_orig, fnk27680_hook);
+			if (rv != 0) {
+				// Error
+				PLOG_ERROR << "Failed to setup EDF5.exe+27680 hook: " << funchook_error_message(funchook) << " (" << rv << ")";
+			}
+		} else {
+			PLOG_INFO << "Skipping EDF5.exe+27680 hook (Interal logging hook)";
 		}
 
 		// Install hooks
