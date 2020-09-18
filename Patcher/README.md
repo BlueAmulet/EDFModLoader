@@ -36,6 +36,10 @@ Based on this [guide](https://steamcommunity.com/sharedfiles/filedetails/?id=181
 These patches are included in the `ExtraPatches` folder and are not active by default.  
 If you want to use any of these patches, move the respective patch into your `Mods\Patches` folder.
 
+### BorderlessWindow (by BlueAmulet)
+BorderlessWindow makes the game run in a borderless window.  
+Can be used as an lite alternative to SpecialK.  
+
 ### NoAmbientOcclusion (by BlueAmulet)
 NoAmbientOcclusion removes the game's ambient occlusion passes.  
 This will remove the intense dark pixelated outlines on objects.  
