@@ -13,11 +13,8 @@ https://github.com/BlueAmulet/EDF5ModLoader/releases
 
 ## Plugins
 ### Patcher
-[Patcher](https://github.com/BlueAmulet/EDF5ModLoader/blob/master/Patcher/README.md) is a plugin to perform runtime memory patches. It accepts .txt files in `Mods\Patches` of the format:  
-```Offset: Hex bytes ; Optional comment```  
-Where 'Offset' is a hexadecimal offset in memory from the base address of EDF5.exe  
-And 'Hex bytes' are a series of hexadecimal bytes to patch into that address.  
-All data including and following a semicolon is ignored up to the end of the line.  
+[Patcher](https://github.com/BlueAmulet/EDF5ModLoader/blob/master/Patcher/README.md) is a plugin to perform runtime memory patches.  
+It loads .txt files containing patch data from `Mods\Patches`, see [Patcher documentation](https://github.com/BlueAmulet/EDF5ModLoader/blob/master/Patcher/README.md) for more information.  
 Patches by [Souzooka](https://github.com/Souzooka) are included by default.  
 Additional patches can be found in the `ExtraPatches` folder, they should be moved to `Mods\Patches` to be used.  
 
