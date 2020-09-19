@@ -5,10 +5,10 @@
 //#define PLOG_EXPORT
 
 #include <vector>
+#include <cstdio>
 
 #include <Windows.h>
 #include <shlwapi.h>
-#include <cstdio>
 #include <funchook.h>
 #include <memory.h>
 
@@ -26,14 +26,14 @@ typedef struct {
 } PluginData;
 
 static std::vector<PluginData*> plugins; // Holds all plugins loaded
-typedef bool (*LoadDef)(PluginInfo*); 
+typedef bool (__fastcall *LoadDef)(PluginInfo*);
 
 static funchook_t *funchook;
 // Called one at beginning and end of game, hooked to perform additional initialization
-typedef int(__fastcall *fnk3d8f00_func)(char);
+typedef int (__fastcall *fnk3d8f00_func)(char);
 static fnk3d8f00_func fnk3d8f00_orig;
 // Called for every file required used (and more?), hooked to redirect file access to Mods folder
-typedef void *(__fastcall *fnk27380_func)(void*, const wchar_t*, unsigned long long);
+typedef void* (__fastcall *fnk27380_func)(void*, const wchar_t*, unsigned long long);
 static fnk27380_func fnk27380_orig;
 // printf-like logging stub, usually given wide strings, sometimes normal strings
 typedef void (__fastcall *fnk27680_func)(const wchar_t*);
@@ -68,11 +68,10 @@ static void LoadPlugins(void) {
 		do {
 			if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
 				PLOG_INFO << "Loading Plugin: " << ffd.cFileName;
-				wchar_t *plugpath = new wchar_t[MAX_PATH];
-				wcscpy(plugpath, L"Mods\\Plugins\\");
-				wcscat(plugpath, ffd.cFileName);
+				wchar_t plugpath[MAX_PATH];
+				wcscpy_s(plugpath, L"Mods\\Plugins\\");
+				wcscat_s(plugpath, ffd.cFileName);
 				HMODULE plugin = LoadLibraryW(plugpath);
-				delete[] plugpath;
 				if (plugin != NULL) {
 					LoadDef loadfunc = (LoadDef)GetProcAddress(plugin, "EML5_Load");
 					bool unload = false;
@@ -177,7 +176,7 @@ static void *__fastcall fnk27380_hook(void *unk, const wchar_t *path, unsigned l
 	// length does not include null terminator
 	if (path != NULL && length >= wcslen(L"app:/") && _wcsnicmp(L"app:/", path, wcslen(L"app:/")) == 0) {
 		IF_PLOG(plog::verbose) {
-			wchar_t* npath = new wchar_t[length + 1];
+			wchar_t *npath = new wchar_t[length + 1];
 			wmemcpy(npath, path, length);
 			npath[length] = L'\0';
 			PLOG_VERBOSE << "Hook: " << npath;
@@ -205,7 +204,7 @@ static void *__fastcall fnk27380_hook(void *unk, const wchar_t *path, unsigned l
 
 // Internal logging hook
 extern "C" {
-void __fastcall fnk27680_hook(const wchar_t *fmt, ...); // wrapper to preserve registers
+void __fastcall fnk27680_hook(const wchar_t *fmt, ...);   // wrapper to preserve registers
 void __fastcall fnk27680_hook_main(const char *fmt, ...); // actual logging implementaton
 
 // Thread Local Storage to preserve/restore registers in wrapper
@@ -283,7 +282,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		WCHAR iniPath[MAX_PATH];
 		GetModuleFileNameW(hModule, iniPath, _countof(iniPath));
 		PathRemoveFileSpecW(iniPath);
-		wcscat(iniPath, L"\\ModLoader.ini");
+		wcscat_s(iniPath, L"\\ModLoader.ini");
 
 		// Read configuration
 		LoadPluginsB = GetPrivateProfileBoolW(L"ModLoader", L"LoadPlugins", LoadPluginsB, iniPath);
@@ -418,9 +417,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		// Unload real winmm.dll
 		PLOG_INFO << "Unloading real winmm.dll";
 		cleanupProxy();
-		break;
 
 		// TODO: Close log file?
+		break;
 	}
 	}
 	return TRUE;

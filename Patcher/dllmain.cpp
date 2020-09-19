@@ -20,7 +20,7 @@ static FILE *hLogFile;
 #define ltputws(str)        ltlog(fuputs, str L"\n", hLogFile);
 #define ltwprintf(fmt, ...) ltlog(fuprintf, hLogFile, fmt L"\n", __VA_ARGS__);
 
-#define lbprintf(...)  fprintf(hLogFile, __VA_ARGS__)
+#define lbprintf(...) fprintf(hLogFile, __VA_ARGS__)
 
 #define lputs(...) do { fputs(__VA_ARGS__, hLogFile); fflush(hLogFile); } while (0)
 
@@ -31,7 +31,7 @@ static void LogDate(void) {
 	lbprintf("[%04d-%02d-%02d %02d:%02d:%02d.%03d] ", lt.wYear, lt.wMonth, lt.wDay, lt.wHour, lt.wMinute, lt.wSecond, lt.wMilliseconds);
 }
 
-static int fuputs(const wchar_t* str, FILE* file) {
+static int fuputs(const wchar_t *str, FILE *file) {
 	int wstr_len = (int)wcslen(str);
 	int num_chars = WideCharToMultiByte(CP_UTF8, 0, str, wstr_len, NULL, 0, NULL, NULL);
 	PCHAR strTo = (PCHAR)HeapAlloc(GetProcessHeap(), 0, ((SIZE_T)num_chars + 1) * sizeof(CHAR));
@@ -51,8 +51,8 @@ static int fuprintf(FILE *file, const wchar_t *fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
 	int required = _vsnwprintf(NULL, 0, fmt, args);
-	wchar_t* buffer = new wchar_t[(size_t)required+1];
-	int rc = _vsnwprintf(buffer, (size_t)required+1, fmt, args);
+	wchar_t *buffer = new wchar_t[(size_t)required + 1];
+	int rc = _vsnwprintf(buffer, (size_t)required + 1, fmt, args);
 	va_end(args);
 	fuputs(buffer, file);
 	delete[] buffer;
@@ -62,7 +62,7 @@ static int fuprintf(FILE *file, const wchar_t *fmt, ...) {
 // Parsed patch record
 typedef struct {
 	uint64_t offset;
-	unsigned char* bytes;
+	unsigned char *bytes;
 	size_t length;
 } PatchRecord;
 
@@ -101,11 +101,10 @@ BOOL __declspec(dllexport) EML5_Load(PluginInfo *pluginInfo) {
 		do {
 			if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
 				ltwprintf(L"Loading patch: %s", ffd.cFileName);
-				wchar_t* patchPath = new wchar_t[MAX_PATH];
-				wcscpy(patchPath, L"Mods\\Patches\\");
-				wcscat(patchPath, ffd.cFileName);
+				wchar_t patchPath[MAX_PATH];
+				wcscpy_s(patchPath, L"Mods\\Patches\\");
+				wcscat_s(patchPath, ffd.cFileName);
 				pfile.open(patchPath, std::ios::in);
-				delete[] patchPath;
 				if (pfile.is_open()) {
 					std::string patchInput;
 					bool patch = true;
@@ -327,13 +326,12 @@ BOOL __declspec(dllexport) EML5_Load(PluginInfo *pluginInfo) {
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
-    switch (ul_reason_for_call)
-    {
-    case DLL_PROCESS_ATTACH:
+	switch (ul_reason_for_call) {
+	case DLL_PROCESS_ATTACH:
 		DisableThreadLibraryCalls(hModule);
 		break;
-    case DLL_PROCESS_DETACH:
-        break;
-    }
-    return TRUE;
+	case DLL_PROCESS_DETACH:
+		break;
+	}
+	return TRUE;
 }
