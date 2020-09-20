@@ -36,10 +36,10 @@ The following types are supported:
 ## Default Patches
 These patches are included and active by default.  
 
-### IncreaseChatLimit (by Souzooka)
+### IncreaseChatLimit (by BlueAmulet, based on Souzooka's patch)
 IncreaseChatLimit increases the chat character limit from 32 to 128 characters.  
 The limit can be increased up to 255 if desired.  
-Based on this [guide](https://steamcommunity.com/sharedfiles/filedetails/?id=1814868040) by Souzooka, ported to Patcher by BlueAmulet  
+Based on this [guide](https://steamcommunity.com/sharedfiles/filedetails/?id=1814868040) by Souzooka, variant by BlueAmulet  
 
 ### RemoveChatCensor (by Souzooka)
 RemoveChatCensor removes chat censorship on your messages, and the messages that other players post.  
