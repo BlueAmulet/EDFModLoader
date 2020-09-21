@@ -107,7 +107,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;EDF5MODLOADER_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>.\;..\funchook\src;..\funchook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\;..\HookLib\HookLib\HookLib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
@@ -126,7 +126,7 @@
       <PreprocessorDefinitions>_DEBUG;EDF5MODLOADER_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>.\;..\funchook\src;..\funchook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\;..\HookLib\HookLib\HookLib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
@@ -146,7 +146,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;EDF5MODLOADER_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>.\;..\funchook\src;..\funchook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\;..\HookLib\HookLib\HookLib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <IntrinsicFunctions>true</IntrinsicFunctions>
     </ClCompile>
     <Link>
@@ -169,7 +169,7 @@
       <PreprocessorDefinitions>NDEBUG;EDF5MODLOADER_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>.\;..\funchook\src;..\funchook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\;..\HookLib\HookLib\HookLib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <IntrinsicFunctions>true</IntrinsicFunctions>
     </ClCompile>
     <Link>
@@ -184,13 +184,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <None Include="cpp.hint" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="..\funchook\src\disasm_Zydis.c" />
-    <ClCompile Include="..\funchook\src\funchook.c" />
-    <ClCompile Include="..\funchook\src\funchook_windows.c" />
-    <ClCompile Include="..\funchook\src\funchook_x86.c" />
+    <ClCompile Include="..\HookLib\HookLib\HookLib\HookLib.c" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="proxy.c" />
   </ItemGroup>
@@ -198,11 +192,7 @@
     <MASM Include="winmm.asm" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\funchook\include\funchook.h" />
-    <ClInclude Include="..\funchook\src\disasm.h" />
-    <ClInclude Include="..\funchook\src\funchook_internal.h" />
-    <ClInclude Include="..\funchook\src\funchook_x86.h" />
-    <ClInclude Include="config.h" />
+    <ClInclude Include="..\HookLib\HookLib\HookLib\HookLib.h" />
     <ClInclude Include="LoggerTweaks.h" />
     <ClInclude Include="PluginAPI.h" />
     <ClInclude Include="proxy.h" />

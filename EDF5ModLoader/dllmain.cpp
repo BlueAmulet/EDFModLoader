@@ -9,7 +9,7 @@
 
 #include <Windows.h>
 #include <shlwapi.h>
-#include <funchook.h>
+#include <HookLib.h>
 #include <memory.h>
 
 #include <plog/Log.h>
@@ -28,7 +28,8 @@ typedef struct {
 static std::vector<PluginData*> plugins; // Holds all plugins loaded
 typedef bool (__fastcall *LoadDef)(PluginInfo*);
 
-static funchook_t *funchook;
+static std::vector<void*> hooks; // Holds all original hooked functions
+
 // Called one at beginning and end of game, hooked to perform additional initialization
 typedef int (__fastcall *fnk3d8f00_func)(char);
 static fnk3d8f00_func fnk3d8f00_orig;
@@ -42,6 +43,7 @@ static fnk27680_func fnk27680_orig;
 // Verify PluginData->module can store a HMODULE
 static_assert(sizeof(HMODULE) == sizeof(PluginData::module), "module field cannot store an HMODULE");
 
+// Minor utility functions
 static inline BOOL FileExistsW(LPCWSTR szPath) {
 	DWORD dwAttrib = GetFileAttributesW(szPath);
 	return (dwAttrib != INVALID_FILE_ATTRIBUTES && !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
@@ -51,6 +53,52 @@ static BOOL GetPrivateProfileBoolW(LPCWSTR lpAppName, LPCWSTR lpKeyName, BOOL bD
 	WCHAR boolStr[6];
 	DWORD strlen = GetPrivateProfileStringW(lpAppName, lpKeyName, bDefault ? L"True" : L"False", boolStr, _countof(boolStr), lpFileName);
 	return (CompareStringW(LOCALE_INVARIANT, NORM_IGNORECASE, boolStr, strlen, L"True", 4) == CSTR_EQUAL);
+}
+
+// Hook wrapper functions
+BOOLEAN EDFMLAPI SetHookWrap(const void *Interceptor, void **Original) {
+	if (Original != NULL && *Original != NULL && SetHook(*Original, Interceptor, Original)) {
+		hooks.push_back(*Original);
+		return true;
+	} else {
+		return false;
+	}
+}
+
+BOOLEAN EDFMLAPI RemoveHookWrap(void *Original) {
+	if (Original != NULL) {
+		std::vector<void*>::iterator position = std::find(hooks.begin(), hooks.end(), Original);
+		if (position != hooks.end()) {
+			if (RemoveHook(Original)) {
+				hooks.erase(position);
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+static void RemoveAllHooks(void) {
+	for (std::vector<void*>::iterator it = hooks.begin(); it != hooks.end();) {
+		void *hook = *it;
+		if (RemoveHook(hook)) {
+			it = hooks.erase(it);
+		} else {
+			// hook is HOOK_DATA->OriginalBeginning
+			// hook-16 is HOOK_DATA->OriginalFunction
+			// TODO: Fork HookLib and exposde HOOK_DATA or add function to retrieve original address
+			PVOID address = *((PVOID*)hook - 16 / sizeof(PVOID));
+
+			HMODULE hmodDLL;
+			wchar_t DLLName[MAX_PATH];
+			GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)address, &hmodDLL);
+			GetModuleFileNameW(hmodDLL, DLLName, _countof(DLLName));
+			PathStripPathW(DLLName);
+
+			PLOG_ERROR << "Failed to remove " << DLLName << "+" << std::hex << ((ULONG_PTR)address - (ULONG_PTR)hmodDLL) << " hook";
+			it++;
+		}
+	}
 }
 
 // Configuration
@@ -269,7 +317,6 @@ static const char ModLoaderStr[] = "ModLoader";
 static const char GameStr[] = "Game";
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
-	int rv;
 	static plog::RollingFileAppender<eml::TxtFormatter<ModLoaderStr>> mlLogOutput("ModLoader.log");
 	static plog::RollingFileAppender<eml::TxtFormatter<GameStr>> gameLogOutput("game.log");
 
@@ -305,7 +352,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		PluginInfo *selfInfo = new PluginInfo;
 		selfInfo->infoVersion = PluginInfo::MaxInfoVer;
 		selfInfo->name = "EDF5ModLoader";
-		selfInfo->version = PLUG_VER(1, 0, 3, 0);
+		selfInfo->version = PLUG_VER(1, 0, 4, 0);
 		PluginData *selfData = new PluginData;
 		selfData->info = selfInfo;
 		selfData->module = hModule;
@@ -332,28 +379,24 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		CreateDirectoryW(L"Mods", NULL);
 		CreateDirectoryW(L"Mods\\Plugins", NULL);
 
-		// Setup funchook
+		// Setup hooks
 		HMODULE hmodEXE = GetModuleHandleW(NULL);
-		// funchook_set_debug_file("funchook.log");
-		funchook = funchook_create();
 
 		// Hook function for additional ModLoader initialization
 		PLOG_INFO << "Hooking EDF5.exe+3d8f00 (Additional initialization)";
 		fnk3d8f00_orig = (fnk3d8f00_func)((PBYTE)hmodEXE + 0x3d8f00);
-		rv = funchook_prepare(funchook, (void**)&fnk3d8f00_orig, fnk3d8f00_hook);
-		if (rv != 0) {
+		if (!SetHookWrap(fnk3d8f00_hook, reinterpret_cast<PVOID*>(&fnk3d8f00_orig))) {
 			// Error
-			PLOG_ERROR << "Failed to setup EDF5.exe+3d8f00 hook: " << funchook_error_message(funchook) << " (" << rv << ")";
+			PLOG_ERROR << "Failed to setup EDF5.exe+3d8f00 hook";
 		}
 
 		// Add Mods folder redirector
 		if (Redirect) {
 			PLOG_INFO << "Hooking EDF5.exe+27380 (Mods folder redirector)";
 			fnk27380_orig = (fnk27380_func)((PBYTE)hmodEXE + 0x27380);
-			rv = funchook_prepare(funchook, (void**)&fnk27380_orig, fnk27380_hook);
-			if (rv != 0) {
+			if (!SetHookWrap(fnk27380_hook, reinterpret_cast<PVOID*>(&fnk27380_orig))) {
 				// Error
-				PLOG_ERROR << "Failed to setup EDF5.exe+27380 hook: " << funchook_error_message(funchook) << " (" << rv << ")";
+				PLOG_ERROR << "Failed to setup EDF5.exe+27380 hook";
 			}
 		} else {
 			PLOG_INFO << "Skipping EDF5.exe+27380 hook (Mods folder redirector)";
@@ -363,22 +406,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		if (GameLog) {
 			PLOG_INFO << "Hooking EDF5.exe+27680 (Interal logging hook)";
 			fnk27680_orig = (fnk27680_func)((PBYTE)hmodEXE + 0x27680);
-			rv = funchook_prepare(funchook, (void**)&fnk27680_orig, fnk27680_hook);
-			if (rv != 0) {
+			if (!SetHookWrap(fnk27680_hook, reinterpret_cast<PVOID*>(&fnk27680_orig))) {
 				// Error
-				PLOG_ERROR << "Failed to setup EDF5.exe+27680 hook: " << funchook_error_message(funchook) << " (" << rv << ")";
+				PLOG_ERROR << "Failed to setup EDF5.exe+27680 hook";
 			}
 		} else {
 			PLOG_INFO << "Skipping EDF5.exe+27680 hook (Interal logging hook)";
-		}
-
-		// Install hooks
-		rv = funchook_install(funchook, 0);
-		if (rv != 0) {
-			// Error
-			PLOG_ERROR << "Failed to install hooks: " << funchook_error_message(funchook) << " (" << rv << ")";
-		} else {
-			PLOG_INFO << "Installed hooks";
 		}
 
 		// Finished
@@ -389,19 +422,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 	case DLL_PROCESS_DETACH: {
 		PLOG_INFO << "EDF5ModLoader Unloading";
 
-		// Disable hooks
-		rv = funchook_uninstall(funchook, 0);
-		if (rv != 0) {
-			// Error
-			PLOG_ERROR << "Failed to uninstall hooks: " << funchook_error_message(funchook) << " (" << rv << ")";
-		} else {
-			PLOG_INFO << "Uninstalled hooks";
-			rv = funchook_destroy(funchook);
-			if (rv != 0) {
-				// Error
-				PLOG_ERROR << "Failed to destroy Funchook instance: " << funchook_error_message(funchook) << " (" << rv << ")";
-			}
-		}
+		// Remove hooks
+		PLOG_INFO << "Removing hooks";
+		RemoveAllHooks();
 
 		// Unload all plugins
 		PLOG_INFO << "Unloading plugins";

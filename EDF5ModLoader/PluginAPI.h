@@ -4,6 +4,8 @@
 extern "C" {
 #endif
 
+#define EDFMLAPI __fastcall
+
 union PluginVersion {
 	struct {
 		unsigned short build;

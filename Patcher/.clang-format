@@ -5,5 +5,6 @@ BreakBeforeBraces: Attach
 ColumnLimit: '9999'
 TabWidth: '4'
 UseTab: ForIndentation
+SortIncludes: false
 
 ...

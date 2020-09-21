@@ -15,22 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <None Include="cpp.hint" />
-  </ItemGroup>
-  <ItemGroup>
     <ClCompile Include="dllmain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\funchook\src\disasm_Zydis.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\funchook\src\funchook.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\funchook\src\funchook_windows.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\funchook\src\funchook_x86.c">
+    <ClCompile Include="..\HookLib\HookLib\HookLib\HookLib.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="proxy.c">
@@ -43,19 +31,7 @@
     </MASM>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\funchook\include\funchook.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\funchook\src\funchook_internal.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\funchook\src\funchook_x86.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\funchook\src\disasm.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="config.h">
+    <ClInclude Include="..\HookLib\HookLib\HookLib\HookLib.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="proxy.h">
