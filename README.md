@@ -1,6 +1,6 @@
 # EDF5 ModLoader
 
-A very basic rudimentary modloader for Earth Defence Force 5.  
+A very basic rudimentary modloader for Earth Defense Force 5.  
 Supports automatic Root.cpk redirection and DLL plugin loading.  
 Writes internal game logging to game.log
 
@@ -39,3 +39,5 @@ cd vcpkg
 bootstrap-vcpkg.bat
 vcpkg install zydis:x64-windows-static-md plog:x64-windows-static-md
 ```
+
+EARTH DEFENSE FORCE is the registered trademark of SANDLOT and D3 PUBLISHER INC. This project is not affiliated with or endorsed by SANDLOT or D3 PUBLISHER INC in any way.
