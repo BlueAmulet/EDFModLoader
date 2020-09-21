@@ -63,3 +63,8 @@ Can be used as an lite alternative to SpecialK.
 ### NoAmbientOcclusion (by BlueAmulet)
 NoAmbientOcclusion removes the game's ambient occlusion passes.  
 This will remove the intense dark pixelated outlines on objects.  
+
+### ChangeFOV (by Souzooka)
+ChangeFOV lets you change the game's FOV from it's default of 45 vFOV.  
+Various presets are included in the ChangeFOV.txt file, see reddit post for image previews.  
+Based on this [reddit post](https://reddit.com/r/EDF/comments/d7mjhw/has_there_been_an_fov_hack_yet/f17bbwn/) by Souzooka, ported to Patcher and added values for other FOV values.  

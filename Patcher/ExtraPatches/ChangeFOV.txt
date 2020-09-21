@@ -1,0 +1,8 @@
+; Author: Souzooka
+; See https://reddit.com/r/EDF/comments/d7mjhw//f17bbwn/ for picture reference
+;9F3DB: 5D 6F ; 0.5 (29 vFOV)
+9F3DB: DD 6F ; Default (45 vFOV)
+;9F3DB: 51 70 ; 1.0 (57 vFOV)
+;9F3DB: 91 70 ; 1.25 (71 vFOV)
+;9F3DB: D5 70 ; 1.5 (86 vFOV)
+;9F3DB: 79 71 ; Quake Pro
