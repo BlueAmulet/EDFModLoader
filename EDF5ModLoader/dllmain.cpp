@@ -247,7 +247,7 @@ static void *__fastcall fnk27380_hook(oddstr *str, const wchar_t *path, size_t l
 			delete[] npath;
 		}
 	}
-	if (path != NULL && length >= cwslen(L"app:/") && _wcsnicmp(L"app:/", path, cwslen(L"app:/")) == 0) {
+	if (path != NULL && length >= cwslen(L"app:/") && _wcsnicmp(L"app:/", path, cwslen(L"app:/")) == 0 && wmemchr(path, L'.', length)) {
 		size_t newlen = length + cwslen(L"./Mods/") - cwslen(L"app:/");
 		wchar_t *modpath = new wchar_t[newlen + 1];
 		wcscpy(modpath, L"./Mods/");
@@ -286,7 +286,7 @@ static void *__fastcall fnk3e420_hook(oddstr *str, const wchar_t *part, size_t l
 			delete[] npath;
 		}
 	}
-	if (path != NULL && str->length >= cwslen(L"app:/") && _wcsnicmp(L"app:/", path, cwslen(L"app:/")) == 0) {
+	if (path != NULL && str->length >= cwslen(L"app:/") && _wcsnicmp(L"app:/", path, cwslen(L"app:/")) == 0 && wmemchr(path, L'.', str->length)) {
 		size_t newlen = str->length + cwslen(L"./Mods/") - cwslen(L"app:/");
 		wchar_t *modpath = new wchar_t[newlen + 1];
 		wcscpy(modpath, L"./Mods/");
@@ -404,7 +404,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		PluginInfo *selfInfo = new PluginInfo;
 		selfInfo->infoVersion = PluginInfo::MaxInfoVer;
 		selfInfo->name = "EDF5ModLoader";
-		selfInfo->version = PLUG_VER(1, 0, 5, 0);
+		selfInfo->version = PLUG_VER(1, 0, 5, 1);
 		PluginData *selfData = new PluginData;
 		selfData->info = selfInfo;
 		selfData->module = hModule;

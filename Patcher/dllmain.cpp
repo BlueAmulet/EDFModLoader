@@ -114,7 +114,7 @@ BOOL __declspec(dllexport) EML5_Load(PluginInfo *pluginInfo) {
 						patchInput.erase(std::remove_if(patchInput.begin(), patchInput.end(), patchfilter), patchInput.end());
 
 						// Remove comments
-						size_t scpos = patchInput.find(";");
+						size_t scpos = patchInput.find(';');
 						if (scpos != std::string::npos) {
 							patchInput = patchInput.substr(0, scpos);
 						}
@@ -122,13 +122,13 @@ BOOL __declspec(dllexport) EML5_Load(PluginInfo *pluginInfo) {
 						// Ignore empty lines
 						if (!patchInput.empty()) {
 							// Check for colon
-							size_t cpos = patchInput.find(":");
+							size_t cpos = patchInput.find(':');
 							if (cpos != std::string::npos) {
 								// Split input into two parts
 								std::string address = patchInput.substr(0, cpos);
 								std::string patchData = patchInput.substr(cpos + 1);
 								// Check for type delimiter
-								size_t tpos = patchData.find("!");
+								size_t tpos = patchData.find('!');
 								if (tpos != std::string::npos) {
 									std::string patchType = patchData.substr(0, tpos);
 									std::string patchValue = patchData.substr(tpos + 1);
