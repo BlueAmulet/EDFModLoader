@@ -33,12 +33,15 @@ static std::vector<void*> hooks; // Holds all original hooked functions
 // Called one at beginning and end of game, hooked to perform additional initialization
 typedef int (__fastcall *fnk3d8f00_func)(char);
 static fnk3d8f00_func fnk3d8f00_orig;
-// Called for various file paths (and more), hooked to redirect file access to Mods folder
+// Called before cpk's are binded, hooked to bind ./Mods folder
+typedef void* (__fastcall *fnk23560_func)(void*, void*);
+static fnk23560_func fnk23560_orig;
+// Binds folder/cpk to CRI File System
+typedef char (__fastcall *fnk24c70_func)(void*, unsigned int, unsigned int);
+static fnk24c70_func fnk24c70_orig;
+// Puts wide string in weird string structure
 typedef void* (__fastcall *fnk27380_func)(void*, const wchar_t*, unsigned long long);
 static fnk27380_func fnk27380_orig;
-// Called for built file paths (and more), hooked to redirect file access to Mods folder
-typedef void* (__fastcall *fnk3e420_func)(void*, const wchar_t*, unsigned long long);
-static fnk3e420_func fnk3e420_orig;
 // printf-like logging stub, usually given wide strings, sometimes normal strings
 typedef void (__fastcall *fnk27680_func)(const wchar_t*);
 static fnk27680_func fnk27680_orig;
@@ -234,71 +237,13 @@ struct oddstr {
 };
 static_assert(sizeof(oddstr) == 32, "Weird string structure should have a length of 32");
 
-// app:/ to Mods folder redirector
-static void *__fastcall fnk27380_hook(oddstr *str, const wchar_t *path, size_t length) {
-	// path is not always null terminated
-	// length does not include null terminator
-	if (path != NULL && length > 0) {
-		IF_PLOG(plog::verbose) {
-			wchar_t *npath = new wchar_t[length + 1];
-			wmemcpy(npath, path, length);
-			npath[length] = L'\0';
-			PLOG_VERBOSE << "Hook1: " << npath;
-			delete[] npath;
-		}
-	}
-	if (path != NULL && length >= cwslen(L"app:/") && _wcsnicmp(L"app:/", path, cwslen(L"app:/")) == 0 && wmemchr(path, L'.', length)) {
-		size_t newlen = length + cwslen(L"./Mods/") - cwslen(L"app:/");
-		wchar_t *modpath = new wchar_t[newlen + 1];
-		wcscpy(modpath, L"./Mods/");
-		wmemcpy(modpath + wcslen(modpath), path + cwslen(L"app:/"), length - cwslen(L"app:/"));
-		modpath[newlen] = L'\0';
-		PLOG_DEBUG << "Checking for " << modpath;
-		if (FileExistsW(modpath)) {
-			PLOG_DEBUG << "Redirecting access to " << modpath;
-			void *ret = fnk27380_orig(str, modpath, newlen);
-			delete[] modpath;
-			return ret;
-		} else {
-			delete[] modpath;
-		}
-	}
-
-	void *ret = fnk27380_orig(str, path, length);
-	return ret;
-}
-
-// app:/ to Mods folder redirector part 2
-static void *__fastcall fnk3e420_hook(oddstr *str, const wchar_t *part, size_t length) {
-	void *ret = fnk3e420_orig(str, part, length);
-	// First 8 bytes are a pointer if length >= 8
-	// Otherwise string is stored where pointer will be?
-	wchar_t *path = (wchar_t*)str;
-	if (str->length >= 8) {
-		path = str->str;
-	}
-	if (path != NULL && str->length > 0) {
-		IF_PLOG(plog::verbose) {
-			wchar_t *npath = new wchar_t[str->length + 1];
-			wmemcpy(npath, path, str->length);
-			npath[str->length] = L'\0';
-			PLOG_VERBOSE << "Hook2: " << npath;
-			delete[] npath;
-		}
-	}
-	if (path != NULL && str->length >= cwslen(L"app:/") && _wcsnicmp(L"app:/", path, cwslen(L"app:/")) == 0 && wmemchr(path, L'.', str->length)) {
-		size_t newlen = str->length + cwslen(L"./Mods/") - cwslen(L"app:/");
-		wchar_t *modpath = new wchar_t[newlen + 1];
-		wcscpy(modpath, L"./Mods/");
-		wmemcpy(modpath + cwslen(L"./Mods/"), path + cwslen(L"app:/"), str->length - cwslen(L"app:/"));
-		modpath[newlen] = L'\0';
-		PLOG_DEBUG << "Checking for " << modpath;
-		if (FileExistsW(modpath)) {
-			PLOG_DEBUG << "Redirecting access to " << modpath;
-			fnk27380_orig(str, modpath, newlen); // fnk27380 used intentionally
-		}
-		delete[] modpath;
-	}
+static void *__fastcall fnk23560_hook(void *unk1, void *unk2) {
+	PLOG_INFO << "Binding ./Mods";
+	void *ret = fnk23560_orig(unk1, unk2);
+	oddstr str;
+	memset(&str, 0, sizeof(oddstr));
+	fnk27380_orig(&str, L"./Mods", 6);
+	fnk24c70_orig(&str, 1, 255);
 	return ret;
 }
 
@@ -442,26 +387,18 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			PLOG_ERROR << "Failed to setup EDF5.exe+3d8f00 hook";
 		}
 
-		// Add Mods folder redirector hook
+		// Bind Mods folder to cri fs
 		if (Redirect) {
-			PLOG_INFO << "Hooking EDF5.exe+27380 (Mods folder redirector)";
+			PLOG_INFO << "Hooking EDF5.exe+23560 (Mods folder redirector)";
 			fnk27380_orig = (fnk27380_func)((PBYTE)hmodEXE + 0x27380);
-			if (!SetHookWrap(fnk27380_hook, reinterpret_cast<PVOID*>(&fnk27380_orig))) {
+			fnk23560_orig = (fnk23560_func)((PBYTE)hmodEXE + 0x23560);
+			fnk24c70_orig = (fnk24c70_func)((PBYTE)hmodEXE + 0x24c70);
+			if (!SetHookWrap(fnk23560_hook, reinterpret_cast<PVOID*>(&fnk23560_orig))) {
 				// Error
-				PLOG_ERROR << "Failed to setup EDF5.exe+27380 hook";
+				PLOG_ERROR << "Failed to setup EDF5.exe+23560 hook";
 			}
 		} else {
-			PLOG_INFO << "Skipping EDF5.exe+3e420 hook (Mods folder redirector)";
-		}
-
-		// Extra Mods folder redirector hook
-		if (Redirect) {
-			PLOG_INFO << "Hooking EDF5.exe+3e420 (Mods folder redirector)";
-			fnk3e420_orig = (fnk3e420_func)((PBYTE)hmodEXE + 0x3e420);
-			if (!SetHookWrap(fnk3e420_hook, reinterpret_cast<PVOID*>(&fnk3e420_orig))) {
-				// Error
-				PLOG_ERROR << "Failed to setup EDF5.exe+3e420 hook";
-			}
+			PLOG_INFO << "Skipping EDF5.exe+23560 hook (Mods folder redirector)";
 		}
 
 		// Add internal logging hook
