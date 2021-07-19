@@ -33,12 +33,9 @@ static std::vector<void*> hooks; // Holds all original hooked functions
 // Called one at beginning and end of game, hooked to perform additional initialization
 typedef int (__fastcall *fnk3d8f00_func)(char);
 static fnk3d8f00_func fnk3d8f00_orig;
-// Called before cpk's are binded, hooked to bind ./Mods folder
-typedef void* (__fastcall *fnk23560_func)(void*, void*);
-static fnk23560_func fnk23560_orig;
-// Binds folder/cpk to CRI File System
-typedef char (__fastcall *fnk24c70_func)(void*, unsigned int, unsigned int);
-static fnk24c70_func fnk24c70_orig;
+// Handles opening files from disk or through CRI File System
+typedef void* (__fastcall *fnk244d0_func)(void*, void*, void*);
+static fnk244d0_func fnk244d0_orig;
 // Puts wide string in weird string structure
 typedef void* (__fastcall *fnk27380_func)(void*, const wchar_t*, unsigned long long);
 static fnk27380_func fnk27380_orig;
@@ -237,14 +234,27 @@ struct oddstr {
 };
 static_assert(sizeof(oddstr) == 32, "Weird string structure should have a length of 32");
 
-static void *__fastcall fnk23560_hook(void *unk1, void *unk2) {
-	PLOG_INFO << "Binding ./Mods";
-	void *ret = fnk23560_orig(unk1, unk2);
-	oddstr str;
-	memset(&str, 0, sizeof(oddstr));
-	fnk27380_orig(&str, L"./Mods", 6);
-	fnk24c70_orig(&str, 1, 255);
-	return ret;
+static void *__fastcall fnk244d0_hook(void *unk1, oddstr *str, void *unk2) {
+	// First 8 bytes are a pointer if length >= 8
+	// Otherwise string is stored where pointer will be?
+	wchar_t *path = (wchar_t*)str;
+	if (str->length >= 8) {
+		path = str->str;
+	}
+	if (path != NULL && str->length >= cwslen(L"/cri_bind/") && _wcsnicmp(L"/cri_bind/", path, cwslen(L"/cri_bind/")) == 0) {
+		size_t newlen = str->length + cwslen(L"./Mods/") - cwslen(L"/cri_bind/");
+		wchar_t *modpath = new wchar_t[newlen + 1];
+		wcscpy(modpath, L"./Mods/");
+		wmemcpy(modpath + cwslen(L"./Mods/"), path + cwslen(L"/cri_bind/"), str->length - cwslen(L"/cri_bind/"));
+		modpath[newlen] = L'\0';
+		PLOG_DEBUG << "Checking for " << modpath;
+		if (FileExistsW(modpath)) {
+			PLOG_DEBUG << "Redirecting access to " << modpath;
+			fnk27380_orig(str, modpath, newlen);
+		}
+		delete[] modpath;
+	}
+	return fnk244d0_orig(unk1, str, unk2);
 }
 
 // Internal logging hook
@@ -349,7 +359,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		PluginInfo *selfInfo = new PluginInfo;
 		selfInfo->infoVersion = PluginInfo::MaxInfoVer;
 		selfInfo->name = "EDF5ModLoader";
-		selfInfo->version = PLUG_VER(1, 0, 6, 0);
+		selfInfo->version = PLUG_VER(1, 0, 7, 0);
 		PluginData *selfData = new PluginData;
 		selfData->info = selfInfo;
 		selfData->module = hModule;
@@ -387,18 +397,17 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			PLOG_ERROR << "Failed to setup EDF5.exe+3d8f00 hook";
 		}
 
-		// Bind Mods folder to cri fs
+		// Add Mods folder redirector hook
 		if (Redirect) {
-			PLOG_INFO << "Hooking EDF5.exe+23560 (Mods folder redirector)";
+			PLOG_INFO << "Hooking EDF5.exe+244d0 (Mods folder redirector)";
 			fnk27380_orig = (fnk27380_func)((PBYTE)hmodEXE + 0x27380);
-			fnk23560_orig = (fnk23560_func)((PBYTE)hmodEXE + 0x23560);
-			fnk24c70_orig = (fnk24c70_func)((PBYTE)hmodEXE + 0x24c70);
-			if (!SetHookWrap(fnk23560_hook, reinterpret_cast<PVOID*>(&fnk23560_orig))) {
+			fnk244d0_orig = (fnk244d0_func)((PBYTE)hmodEXE + 0x244d0);
+			if (!SetHookWrap(fnk244d0_hook, reinterpret_cast<PVOID*>(&fnk244d0_orig))) {
 				// Error
-				PLOG_ERROR << "Failed to setup EDF5.exe+23560 hook";
+				PLOG_ERROR << "Failed to setup EDF5.exe+244d0 hook";
 			}
 		} else {
-			PLOG_INFO << "Skipping EDF5.exe+23560 hook (Mods folder redirector)";
+			PLOG_INFO << "Skipping EDF5.exe+244d0 hook (Mods folder redirector)";
 		}
 
 		// Add internal logging hook
