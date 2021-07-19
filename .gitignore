@@ -361,5 +361,5 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 
-# EDF5 ModLoader packages
+# EDF ModLoader packages
 *.zip

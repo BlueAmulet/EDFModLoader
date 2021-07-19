@@ -1,7 +1,7 @@
 .data
 extern PA : qword
 
-extern fnk27680_hook_main : proto
+extern gamelog_hook_main : proto
 
 extern _tls_index : DWORD
 extern save_ret : QWORD
@@ -28,7 +28,7 @@ runASM endp
 ; The original function normally doesn't touch any registers, or do anything.
 ; The code that calls this function is optimized for that.
 ; So we must preserve all volatile registers ourself.
-fnk27680_hook proc
+gamelog_hook proc
 
 ; Preserve rbx/r12
 push rbx
@@ -80,7 +80,7 @@ pop rbx
 
 ; Replace return address and do actual work
 add rsp,8
-call fnk27680_hook_main
+call gamelog_hook_main
 
 ; Push dummy value to be replaced later
 push rax
@@ -140,5 +140,5 @@ pop rbx
 
 ; Goodbye
 ret
-fnk27680_hook endp
+gamelog_hook endp
 end

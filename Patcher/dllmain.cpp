@@ -2,6 +2,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 
 #include <windows.h>
+#include <shlwapi.h>
 
 #include <cstdio>
 #include <fstream>
@@ -85,15 +86,18 @@ static int patchfilter(int c) {
 	return isspace(c) || c == '[' || c == ']';
 }
 
-extern "C" {
-BOOL __declspec(dllexport) EML5_Load(PluginInfo *pluginInfo) {
+BOOL EMLCommon_Load(PluginInfo *pluginInfo) {
 	// Patcher does not need to remain loaded, so not filling PluginInfo
 	hLogFile = fopen("Patcher.log", "wb");
 	WIN32_FIND_DATAW ffd;
 	std::fstream pfile;
-	UINT_PTR hmodEXE = (UINT_PTR)GetModuleHandleW(NULL);
+	PBYTE hmodEXE = (PBYTE)GetModuleHandleW(NULL);
+	char hmodName[MAX_PATH];
+	GetModuleFileNameA((HMODULE)hmodEXE, hmodName, _countof(hmodName));
+	char *hmodFName = PathFindFileNameA(hmodName);
+	memmove(hmodName, hmodFName, strlen(hmodFName) + 1);
 
-	ltputs("EDF5 Patcher v1.0.2");
+	ltputs("EDF Patcher v1.0.2");
 	ltputs("Loading patches");
 	HANDLE hFind = FindFirstFileW(L"Mods\\Patches\\*.txt", &ffd);
 
@@ -283,8 +287,8 @@ BOOL __declspec(dllexport) EML5_Load(PluginInfo *pluginInfo) {
 						// Apply memory patches
 						if (!patches.empty()) {
 							for (PatchRecord *record : patches) {
-								ltprintf("Patching %I64d bytes at EDF5.exe+%I64x", record->length, record->offset);
-								WriteBuffer((void*)(hmodEXE + record->offset), record->bytes, record->length);
+								ltprintf("Patching %I64d bytes at %s+%I64x", record->length, hmodName, record->offset);
+								WriteBuffer(hmodEXE + record->offset, record->bytes, record->length);
 							}
 							lputs("\n");
 						} else {
@@ -322,6 +326,15 @@ BOOL __declspec(dllexport) EML5_Load(PluginInfo *pluginInfo) {
 	fclose(hLogFile);
 
 	return false; // Unload plugin
+}
+
+extern "C" {
+BOOL __declspec(dllexport) EML4_Load(PluginInfo *pluginInfo) {
+	return EMLCommon_Load(pluginInfo);
+}
+
+BOOL __declspec(dllexport) EML5_Load(PluginInfo *pluginInfo) {
+	return EMLCommon_Load(pluginInfo);
 }
 }
 

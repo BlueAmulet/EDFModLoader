@@ -1,20 +1,20 @@
-# EDF5 ModLoader
+# EDFModLoader
 
-A very basic rudimentary modloader for Earth Defense Force 5.  
+A very basic rudimentary modloader for Earth Defense Force 4.1 & 5.  
 Supports automatic Root.cpk redirection and DLL plugin loading.  
 Writes internal game logging to game.log
 
 This repository contains submodules! Please use `--recurse-submodules` when cloning.
 
 ## Installation
-Get the latest package from [Releases](https://github.com/BlueAmulet/EDF5ModLoader/releases) and unpack it in the same folder as EDF5.exe
+Get the latest package from [Releases](https://github.com/BlueAmulet/EDFModLoader/releases) and unpack it in the same folder as EDF5.exe
 
-https://github.com/BlueAmulet/EDF5ModLoader/releases
+https://github.com/BlueAmulet/EDFModLoader/releases
 
 ## Plugins
 ### Patcher
-[Patcher](https://github.com/BlueAmulet/EDF5ModLoader/blob/master/Patcher/README.md) is a plugin to perform runtime memory patches.  
-It loads .txt files containing patch data from `Mods\Patches`, see [Patcher documentation](https://github.com/BlueAmulet/EDF5ModLoader/blob/master/Patcher/README.md) for more information.  
+[Patcher](https://github.com/BlueAmulet/EDFModLoader/blob/master/Patcher/README.md) is a plugin to perform runtime memory patches.  
+It loads .txt files containing patch data from `Mods\Patches`, see [Patcher documentation](https://github.com/BlueAmulet/EDFModLoader/blob/master/Patcher/README.md) for more information.  
 Patches by [Souzooka](https://github.com/Souzooka) are included by default.  
 Additional patches can be found in the `ExtraPatches` folder, they should be moved to `Mods\Patches` to be used.  
 

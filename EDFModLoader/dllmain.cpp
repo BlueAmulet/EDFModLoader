@@ -30,9 +30,9 @@ typedef bool (__fastcall *LoadDef)(PluginInfo*);
 
 static std::vector<void*> hooks; // Holds all original hooked functions
 
-// Called one at beginning and end of game, hooked to perform additional initialization
-typedef int (__fastcall *fnk3d8f00_func)(char);
-static fnk3d8f00_func fnk3d8f00_orig;
+// Called during initialization of CRT
+typedef void* (__fastcall *initterm_func)(void*, void*);
+static initterm_func initterm_orig;
 // Handles opening files from disk or through CRI File System
 typedef void* (__fastcall *fnk244d0_func)(void*, void*, void*);
 static fnk244d0_func fnk244d0_orig;
@@ -40,8 +40,8 @@ static fnk244d0_func fnk244d0_orig;
 typedef void* (__fastcall *fnk27380_func)(void*, const wchar_t*, unsigned long long);
 static fnk27380_func fnk27380_orig;
 // printf-like logging stub, usually given wide strings, sometimes normal strings
-typedef void (__fastcall *fnk27680_func)(const wchar_t*);
-static fnk27680_func fnk27680_orig;
+typedef void (__fastcall *gamelog_func)(const wchar_t*);
+static gamelog_func gamelog_orig;
 
 // Verify PluginData->module can store a HMODULE
 static_assert(sizeof(HMODULE) == sizeof(PluginData::module), "module field cannot store an HMODULE");
@@ -62,6 +62,8 @@ template <size_t N>
 constexpr size_t cwslen(wchar_t const (&)[N]) {
 	return N - 1;
 }
+
+#define wcsstart(a, b) (!wcsncmp(a, b, cwslen(b)))
 
 // Hook wrapper functions
 BOOLEAN EDFMLAPI SetHookWrap(const void *Interceptor, void **Original) {
@@ -114,6 +116,21 @@ static BOOL LoadPluginsB = TRUE;
 static BOOL Redirect = TRUE;
 static BOOL GameLog = FALSE;
 
+// Pointer sets
+typedef struct {
+	uintptr_t offset;
+	const wchar_t *search;
+	const char *ident;
+	const char *plugfunc;
+	uintptr_t pointers[4];
+} PointerSet;
+
+int pointerSet = -1;
+PointerSet psets[2] = { //
+	{0xebcbd0, L"EarthDefenceForce 5 for PC", "EDF5", "EML5_Load", {0x9c835a, 0x244d0, 0x27380, 0x27680}}, // EDF 5
+	{0xaa36d0, L"EarthDefenceForce 4.1 for Windows", "EDF41", "EML4_Load", {0x667102, 0x8ed80, 0x91580, 0x91790}}, // EDF 4.1
+};
+
 // Search and load all *.dll files in Mods\Plugins\ folder
 static void LoadPlugins(void) {
 	WIN32_FIND_DATAW ffd;
@@ -129,7 +146,7 @@ static void LoadPlugins(void) {
 				wcscat_s(plugpath, ffd.cFileName);
 				HMODULE plugin = LoadLibraryW(plugpath);
 				if (plugin != NULL) {
-					LoadDef loadfunc = (LoadDef)GetProcAddress(plugin, "EML5_Load");
+					LoadDef loadfunc = (LoadDef)GetProcAddress(plugin, psets[pointerSet].plugfunc);
 					bool unload = false;
 					if (loadfunc != NULL) {
 						PluginInfo *pluginInfo = new PluginInfo();
@@ -166,7 +183,7 @@ static void LoadPlugins(void) {
 							delete pluginInfo;
 						}
 					} else {
-						PLOG_WARNING << "Plugin does not contain EML5_Load function";
+						PLOG_WARNING << "Plugin does not contain " << psets[pointerSet].plugfunc << " function";
 						unload = true;
 					}
 					if (unload) {
@@ -192,26 +209,11 @@ static void LoadPlugins(void) {
 	}
 }
 
-// Add "+ModLoader" to game window
-static void ModifyTitle(void) {
-	HWND edfHWND = FindWindowW(L"xgs::Framework", L"EarthDefenceForce 5 for PC");
-	if (edfHWND != NULL) {
-		int length = GetWindowTextLengthW(edfHWND);
-		const wchar_t *suffix = L" +ModLoader";
-		wchar_t *buffer = new wchar_t[length + wcslen(suffix) + 1];
-		GetWindowTextW(edfHWND, buffer, length + wcslen(suffix) + 1);
-		wcscat(buffer, suffix);
-		SetWindowTextW(edfHWND, buffer);
-		delete[] buffer;
-	} else {
-		PLOG_WARNING << "Failed to get window handle to EDF5";
-	}
-}
-
 // Early hook into game process
-static int __fastcall fnk3d8f00_hook(char unk) {
-	// Called with 0 at beginning, 1 later
-	if (unk == 0) {
+static void* __fastcall initterm_hook(void *unk1, void *unk2) {
+	static bool initialized = false;
+	if (!initialized) {
+		initialized = true;
 		PLOG_INFO << "Additional initialization";
 
 		// Load plugins
@@ -223,7 +225,7 @@ static int __fastcall fnk3d8f00_hook(char unk) {
 
 		PLOG_INFO << "Initialization finished";
 	}
-	return fnk3d8f00_orig(unk);
+	return initterm_orig(unk1, unk2);
 }
 
 struct oddstr {
@@ -241,7 +243,7 @@ static void *__fastcall fnk244d0_hook(void *unk1, oddstr *str, void *unk2) {
 	if (str->length >= 8) {
 		path = str->str;
 	}
-	if (path != NULL && str->length >= cwslen(L"/cri_bind/") && _wcsnicmp(L"/cri_bind/", path, cwslen(L"/cri_bind/")) == 0) {
+	if (path != NULL && str->length >= cwslen(L"/cri_bind/") && wcsstart(path, L"/cri_bind/")) {
 		size_t newlen = str->length + cwslen(L"./Mods/") - cwslen(L"/cri_bind/");
 		wchar_t *modpath = new wchar_t[newlen + 1];
 		wcscpy(modpath, L"./Mods/");
@@ -259,8 +261,8 @@ static void *__fastcall fnk244d0_hook(void *unk1, oddstr *str, void *unk2) {
 
 // Internal logging hook
 extern "C" {
-void __fastcall fnk27680_hook(const wchar_t *fmt, ...);   // wrapper to preserve registers
-void __fastcall fnk27680_hook_main(const char *fmt, ...); // actual logging implementaton
+void __fastcall gamelog_hook(const wchar_t *fmt, ...);   // wrapper to preserve registers
+void __fastcall gamelog_hook_main(const char *fmt, ...); // actual logging implementaton
 
 // Thread Local Storage to preserve/restore registers in wrapper
 // TODO: Move all of this to winmm.asm
@@ -281,7 +283,7 @@ __declspec(thread) M128A save_xmm4;
 __declspec(thread) M128A save_xmm5;
 }
 
-void __fastcall fnk27680_hook_main(const char *fmt, ...) {
+void __fastcall gamelog_hook_main(const char *fmt, ...) {
 	if (fmt != NULL) {
 		va_list args;
 		va_start(args, fmt);
@@ -321,11 +323,26 @@ void __fastcall fnk27680_hook_main(const char *fmt, ...) {
 
 // Names for the log formatter
 static const char ModLoaderStr[] = "ModLoader";
-static const char GameStr[] = "Game";
+
+PBYTE hmodEXE;
+char hmodName[MAX_PATH];
+
+void SetupHook(uintptr_t offset, void **func, void* hook, const char *reason, BOOL active) {
+	if (active) {
+		PLOG_INFO << "Hooking " << hmodName << "+" << std::hex << offset << " (" << reason << ")";
+		*func = hmodEXE + offset;
+		if (!SetHookWrap(hook, func)) {
+			// Error
+			PLOG_ERROR << "Failed to setup " << hmodName << "+" << std::hex << offset << " hook";
+		}
+	} else {
+		PLOG_INFO << "Skipping " << hmodName << "+" << std::hex << offset << " hook (" << reason << ")";
+	}
+}
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
 	static plog::RollingFileAppender<eml::TxtFormatter<ModLoaderStr>> mlLogOutput("ModLoader.log");
-	static plog::RollingFileAppender<eml::TxtFormatter<GameStr>> gameLogOutput("game.log");
+	static plog::RollingFileAppender<eml::TxtFormatter<nullptr>> gameLogOutput("game.log");
 
 	switch (ul_reason_for_call) {
 	case DLL_PROCESS_ATTACH: {
@@ -358,22 +375,40 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		// Add ourself to plugin list for future reference
 		PluginInfo *selfInfo = new PluginInfo;
 		selfInfo->infoVersion = PluginInfo::MaxInfoVer;
-		selfInfo->name = "EDF5ModLoader";
-		selfInfo->version = PLUG_VER(1, 0, 7, 0);
+		selfInfo->name = "EDFModLoader";
+		selfInfo->version = PLUG_VER(1, 0, 7, 1);
 		PluginData *selfData = new PluginData;
 		selfData->info = selfInfo;
 		selfData->module = hModule;
 		plugins.push_back(selfData);
 
+		// Determine what game is hosting us
+		hmodEXE = (PBYTE)GetModuleHandleW(NULL);
+		GetModuleFileNameA((HMODULE)hmodEXE, hmodName, _countof(hmodName));
+		char *hmodFName = PathFindFileNameA(hmodName);
+		memmove(hmodName, hmodFName, strlen(hmodFName) + 1);
+		for (int i = 0; i < _countof(psets); i++) {
+			size_t search_len = wcslen(psets[i].search);
+			if (!IsBadReadPtr(hmodEXE + psets[i].offset, search_len+1) && !wcsncmp((wchar_t*)(hmodEXE + psets[i].offset), psets[i].search, search_len)) {
+				pointerSet = i;
+				break;
+			}
+		}
+		if (pointerSet == -1) {
+			PLOG_ERROR << "Failed to determine what exe is running";
+			return FALSE;
+		}
+		uintptr_t *pointers = psets[pointerSet].pointers;
+
 		PluginVersion v = selfInfo->version;
-		PLOG_INFO.printf("EDF5ModLoader v%u.%u.%u Initializing\n", v.major, v.minor, v.patch);
+		PLOG_INFO.printf("EDFModLoader (%s) v%u.%u.%u Initializing\n", psets[pointerSet].ident, v.major, v.minor, v.patch);
 
 		// Setup DLL proxy
 		wchar_t path[MAX_PATH];
 		if (!GetWindowsDirectoryW(path, _countof(path))) {
 			DWORD dwError = GetLastError();
 			PLOG_ERROR << "Failed to get windows directory path: error " << dwError;
-			ExitProcess(EXIT_FAILURE);
+			return FALSE;
 		}
 
 		wcscat_s(path, L"\\System32\\winmm.dll");
@@ -386,41 +421,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		CreateDirectoryW(L"Mods", NULL);
 		CreateDirectoryW(L"Mods\\Plugins", NULL);
 
-		// Setup hooks
-		HMODULE hmodEXE = GetModuleHandleW(NULL);
-
 		// Hook function for additional ModLoader initialization
-		PLOG_INFO << "Hooking EDF5.exe+3d8f00 (Additional initialization)";
-		fnk3d8f00_orig = (fnk3d8f00_func)((PBYTE)hmodEXE + 0x3d8f00);
-		if (!SetHookWrap(fnk3d8f00_hook, reinterpret_cast<PVOID*>(&fnk3d8f00_orig))) {
-			// Error
-			PLOG_ERROR << "Failed to setup EDF5.exe+3d8f00 hook";
-		}
+		SetupHook(pointers[0], (PVOID*)&initterm_orig, initterm_hook, "Additional initialization", TRUE);
 
 		// Add Mods folder redirector hook
-		if (Redirect) {
-			PLOG_INFO << "Hooking EDF5.exe+244d0 (Mods folder redirector)";
-			fnk27380_orig = (fnk27380_func)((PBYTE)hmodEXE + 0x27380);
-			fnk244d0_orig = (fnk244d0_func)((PBYTE)hmodEXE + 0x244d0);
-			if (!SetHookWrap(fnk244d0_hook, reinterpret_cast<PVOID*>(&fnk244d0_orig))) {
-				// Error
-				PLOG_ERROR << "Failed to setup EDF5.exe+244d0 hook";
-			}
-		} else {
-			PLOG_INFO << "Skipping EDF5.exe+244d0 hook (Mods folder redirector)";
-		}
+		fnk27380_orig = (fnk27380_func)((PBYTE)hmodEXE + pointers[2]);
+		SetupHook(pointers[1], (PVOID*)&fnk244d0_orig, fnk244d0_hook, "Mods folder redirector", Redirect);
 
 		// Add internal logging hook
-		if (GameLog) {
-			PLOG_INFO << "Hooking EDF5.exe+27680 (Interal logging hook)";
-			fnk27680_orig = (fnk27680_func)((PBYTE)hmodEXE + 0x27680);
-			if (!SetHookWrap(fnk27680_hook, reinterpret_cast<PVOID*>(&fnk27680_orig))) {
-				// Error
-				PLOG_ERROR << "Failed to setup EDF5.exe+27680 hook";
-			}
-		} else {
-			PLOG_INFO << "Skipping EDF5.exe+27680 hook (Interal logging hook)";
-		}
+		SetupHook(pointers[3], (PVOID*)&gamelog_orig, gamelog_hook, "Interal logging hook", GameLog);
 
 		// Finished
 		PLOG_INFO << "Basic initialization complete";
@@ -428,7 +437,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		break;
 	}
 	case DLL_PROCESS_DETACH: {
-		PLOG_INFO << "EDF5ModLoader Unloading";
+		PLOG_INFO << "EDFModLoader Unloading";
 
 		// Remove hooks
 		PLOG_INFO << "Removing hooks";

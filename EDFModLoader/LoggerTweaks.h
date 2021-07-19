@@ -36,7 +36,9 @@ namespace eml {
 			plog::util::nostringstream ss;
 			ss << PLOG_NSTR("[") << t.tm_year + 1900 << "-" << std::setfill(PLOG_NSTR('0')) << std::setw(2) << t.tm_mon + 1 << PLOG_NSTR("-") << std::setfill(PLOG_NSTR('0')) << std::setw(2) << t.tm_mday << PLOG_NSTR(" ");
 			ss << std::setfill(PLOG_NSTR('0')) << std::setw(2) << t.tm_hour << PLOG_NSTR(":") << std::setfill(PLOG_NSTR('0')) << std::setw(2) << t.tm_min << PLOG_NSTR(":") << std::setfill(PLOG_NSTR('0')) << std::setw(2) << t.tm_sec << PLOG_NSTR(".") << std::setfill(PLOG_NSTR('0')) << std::setw(3) << static_cast<int>(record.getTime().millitm) << PLOG_NSTR("] ");
-		    ss << PLOG_NSTR("[") << shizo << PLOG_NSTR("] [") << severityToStringLower(record.getSeverity()) << PLOG_NSTR("] ");
+			if (shizo) {
+				ss << PLOG_NSTR("[") << shizo << PLOG_NSTR("] [") << severityToStringLower(record.getSeverity()) << PLOG_NSTR("] ");
+			}
 			ss << record.getMessage() << PLOG_NSTR("\n");
 
 			return ss.str();
