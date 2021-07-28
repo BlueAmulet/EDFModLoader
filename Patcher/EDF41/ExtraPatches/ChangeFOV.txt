@@ -1,0 +1,8 @@
+; Author: BlueAmulet, based on Souzooka's FOV mod for EDF5
+; See https://reddit.com/r/EDF/comments/d7mjhw//f17bbwn/ for picture reference
+;DF3B7: B1 71 ; 0.5 (29 vFOV)
+DF3B7: 29 72 ; Default (45 vFOV)
+;DF3B7: 89 72 ; 1.0 (57 vFOV)
+;DF3B7: C5 72 ; 1.25 (71 vFOV)
+;DF3B7: F5 72 ; 1.5 (86 vFOV)
+;DF3B7: 89 73 ; Quake Pro
