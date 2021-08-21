@@ -34,5 +34,5 @@ The following types are supported:
 | f64 | Alternative type name for double |
 
 ## Included Patches
-[EDF4.1 Patches](https://github.com/BlueAmulet/EDFModLoader/blob/master/Patcher/EDF41/Patches.md)
+[EDF4.1 Patches](https://github.com/BlueAmulet/EDFModLoader/blob/master/Patcher/EDF41/Patches.md)  
 [EDF5 Patches](https://github.com/BlueAmulet/EDFModLoader/blob/master/Patcher/EDF5/Patches.md)
