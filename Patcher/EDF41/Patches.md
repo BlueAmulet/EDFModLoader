@@ -1,5 +1,10 @@
 ## Default Patches
-There are no patches for EDF4.1 included by default at this time.
+These patches are included and active by default.  
+
+### RemoveChatCensor (by BlueAmulet, based on Souzooka's patch)
+RemoveChatCensor removes chat censorship on your messages, and the messages that other players post.  
+Other players will still see your message as censored unless they also have this patch.  
+Based on this [guide](https://steamcommunity.com/sharedfiles/filedetails/?id=1814868040) by Souzooka, variant by BlueAmulet  
 
 ## Extra Patches
 These patches are included in the `ExtraPatches` folder and are not active by default.  

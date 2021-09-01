@@ -6,10 +6,10 @@ IncreaseChatLimit increases the chat character limit from 32 to 128 characters.
 The limit can be increased up to 255 if desired.  
 Based on this [guide](https://steamcommunity.com/sharedfiles/filedetails/?id=1814868040) by Souzooka, variant by BlueAmulet  
 
-### RemoveChatCensor (by Souzooka)
+### RemoveChatCensor (by BlueAmulet, based on Souzooka's patch)
 RemoveChatCensor removes chat censorship on your messages, and the messages that other players post.  
 Other players will still see your message as censored unless they also have this patch.  
-Based on this [guide](https://steamcommunity.com/sharedfiles/filedetails/?id=1814868040) by Souzooka, ported to Patcher by BlueAmulet  
+Based on this [guide](https://steamcommunity.com/sharedfiles/filedetails/?id=1814868040) by Souzooka, variant by BlueAmulet  
 
 ### MouseJitterFix (by Souzooka)
 MouseJitterFix reduces mouse jerkiness for those suffering from the "mouse jittering" bug.  
