@@ -6,12 +6,12 @@
 
 #include <vector>
 #include <cstdio>
-
-#include <Windows.h>
-#include <shlwapi.h>
-#include <HookLib.h>
 #include <memory.h>
 
+#include <windows.h>
+#include <shlwapi.h>
+
+#include <HookLib.h>
 #include <plog/Log.h>
 #include <plog/Initializers/RollingFileInitializer.h>
 
@@ -96,7 +96,7 @@ static void RemoveAllHooks(void) {
 		} else {
 			// hook is HOOK_DATA->OriginalBeginning
 			// hook-16 is HOOK_DATA->OriginalFunction
-			// TODO: Fork HookLib and exposde HOOK_DATA or add function to retrieve original address
+			// TODO: Fork HookLib and expose HOOK_DATA or add function to retrieve original address
 			PVOID address = *((PVOID*)hook - 16 / sizeof(PVOID));
 
 			HMODULE hmodDLL;

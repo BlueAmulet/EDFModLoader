@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iomanip>
 #include <plog/Log.h>
 
 namespace eml {
