@@ -123,12 +123,14 @@ typedef struct {
 	const char *ident;
 	const char *plugfunc;
 	uintptr_t pointers[4];
+	uintptr_t version;
+	uintptr_t align;
 } PointerSet;
 
 int pointerSet = -1;
 PointerSet psets[2] = { //
-	{0xebcbd0, L"EarthDefenceForce 5 for PC", "EDF5", "EML5_Load", {0x9c835a, 0x244d0, 0x27380, 0x27680}}, // EDF 5
-	{0xaa36d0, L"EarthDefenceForce 4.1 for Windows", "EDF41", "EML4_Load", {0x667102, 0x8ed80, 0x91580, 0x91790}}, // EDF 4.1
+	{0xebcbd0, L"EarthDefenceForce 5 for PC", "EDF5", "EML5_Load", {0x9c835a, 0x244d0, 0x27380, 0x27680}, 5, 0}, // EDF 5
+	{0xaa36d0, L"EarthDefenceForce 4.1 for Windows", "EDF41", "EML4_Load", {0x667102, 0x8ed80, 0x91580, 0x91790}, 41, 0}, // EDF 4.1
 };
 
 // Search and load all *.dll files in Mods\Plugins\ folder
@@ -340,6 +342,14 @@ void SetupHook(uintptr_t offset, void **func, void* hook, const char *reason, BO
 	}
 }
 
+// Injects hook into game process
+void WriteHookToProcess(void *addr, void *data, size_t len) {
+	DWORD oldProtect;
+	VirtualProtect(addr, len, PAGE_EXECUTE_READWRITE, &oldProtect);
+	memcpy(addr, data, len);
+	VirtualProtect(addr, len, oldProtect, &oldProtect);
+}
+
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
 	static plog::RollingFileAppender<eml::TxtFormatter<ModLoaderStr>> mlLogOutput("ModLoader.log");
 	static plog::RollingFileAppender<eml::TxtFormatter<nullptr>> gameLogOutput("game.log");
@@ -420,6 +430,20 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		// Create ModLoader folders
 		CreateDirectoryW(L"Mods", NULL);
 		CreateDirectoryW(L"Mods\\Plugins", NULL);
+
+        if(psets[pointerSet].version == 5){
+            // forced private room creation
+            // everyone, offset is 0x57F88F
+            unsigned char everyone1[] = {0x82, 0x94};
+            WriteHookToProcess((void *)(hmodEXE + 0x58048F + 3), &everyone1, 2U);
+            unsigned char everyone2[] = {0x3C, 0x78};
+            WriteHookToProcess((void *)(hmodEXE + 0x5820D5 + 3), &everyone2, 2U);
+            // need password, offset is 0x57FAD0
+            unsigned char password1[] = {0x41};
+            WriteHookToProcess((void *)(hmodEXE + 0x5806D0 + 3), &password1, 1U);
+            unsigned char password2[] = {0xDC, 0x78};
+            WriteHookToProcess((void *)(hmodEXE + 0x582035 + 3), &password2, 2U);
+        }
 
 		// Hook function for additional ModLoader initialization
 		SetupHook(pointers[0], (PVOID*)&initterm_orig, initterm_hook, "Additional initialization", TRUE);
