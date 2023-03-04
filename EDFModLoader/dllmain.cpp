@@ -8,16 +8,6 @@
 #include <cstdio>
 #include <memory.h>
 
-#i#define _CRT_SECURE_NO_WARNINGS
-#define WIN32_LEAN_AND_MEAN
-
-#define PLOG_OMIT_LOG_DEFINES
-//#define PLOG_EXPORT
-
-#include <vector>
-#include <cstdio>
-#include <memory.h>
-
 #include <windows.h>
 #include <shlwapi.h>
 
