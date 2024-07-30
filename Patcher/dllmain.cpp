@@ -86,19 +86,35 @@ static int patchfilter(int c) {
 	return isspace(c) || c == '[' || c == ']';
 }
 
-BOOL EMLCommon_Load(PluginInfo *pluginInfo) {
+BOOL EMLCommon_Load(PluginInfo *pluginInfo, BOOL EDF6) {
 	// Patcher does not need to remain loaded, so not filling PluginInfo
 	hLogFile = fopen("Patcher.log", "wb");
-	WIN32_FIND_DATAW ffd;
-	std::fstream pfile;
-	PBYTE hmodEXE = (PBYTE)GetModuleHandleW(NULL);
+	ltputs("EDF Patcher v1.0.3");
+
+	PBYTE hmodEXE;
+	if (EDF6) {
+		// TODO: Hack to support EDF6
+		hmodEXE = (PBYTE)GetModuleHandleW(L"EDF.dll");
+	} else {
+		hmodEXE = (PBYTE)GetModuleHandleW(NULL);
+	}
+	if (hmodEXE == NULL)
+	{
+		if (EDF6) {
+			ltputs("Error: Failed to get handle to EDF.dll");
+		} else {
+			ltputs("Error: Failed to get handle to game executable");
+		}
+		return false; // Unload plugin
+	}
 	char hmodName[MAX_PATH];
 	GetModuleFileNameA((HMODULE)hmodEXE, hmodName, _countof(hmodName));
 	char *hmodFName = PathFindFileNameA(hmodName);
 	memmove(hmodName, hmodFName, strlen(hmodFName) + 1);
 
-	ltputs("EDF Patcher v1.0.2");
 	ltputs("Loading patches");
+	std::fstream pfile;
+	WIN32_FIND_DATAW ffd;
 	HANDLE hFind = FindFirstFileW(L"Mods\\Patches\\*.txt", &ffd);
 
 	if (hFind != INVALID_HANDLE_VALUE) {
@@ -330,11 +346,15 @@ BOOL EMLCommon_Load(PluginInfo *pluginInfo) {
 
 extern "C" {
 BOOL __declspec(dllexport) EML4_Load(PluginInfo *pluginInfo) {
-	return EMLCommon_Load(pluginInfo);
+	return EMLCommon_Load(pluginInfo, false);
 }
 
 BOOL __declspec(dllexport) EML5_Load(PluginInfo *pluginInfo) {
-	return EMLCommon_Load(pluginInfo);
+	return EMLCommon_Load(pluginInfo, false);
+}
+
+BOOL __declspec(dllexport) EML6_Load(PluginInfo *pluginInfo) {
+	return EMLCommon_Load(pluginInfo, true);
 }
 }
 

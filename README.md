@@ -1,6 +1,6 @@
 # EDFModLoader
 
-A very basic rudimentary modloader for Earth Defense Force 4.1 & 5.  
+A very basic rudimentary modloader for Earth Defense Force 4.1, 5, and 6.  
 Supports automatic Root.cpk redirection and DLL plugin loading.  
 Writes internal game logging to game.log
 
@@ -37,7 +37,7 @@ To setup vcpkg and required libraries:
 git clone https://github.com/microsoft/vcpkg
 cd vcpkg
 bootstrap-vcpkg.bat
-vcpkg install zydis:x64-windows-static-md plog:x64-windows-static-md
+vcpkg install minhook:x64-windows-static-md plog:x64-windows-static-md
 ```
 
 EARTH DEFENSE FORCE is the registered trademark of SANDLOT and D3 PUBLISHER INC. This project is not affiliated with or endorsed by SANDLOT or D3 PUBLISHER INC in any way.
