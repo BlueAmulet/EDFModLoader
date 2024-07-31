@@ -30,7 +30,7 @@ pluginInfo->version = PLUG_VER(Major, Minor, Patch, Build);
 ```
 
 ## Building
-You will need [Visual Studio 2019](https://visualstudio.microsoft.com/vs/community/) and [vcpkg](https://github.com/microsoft/vcpkg)
+You will need [Visual Studio 2022](https://visualstudio.microsoft.com/vs/community/) and [vcpkg](https://github.com/microsoft/vcpkg)
 
 To setup vcpkg and required libraries:  
 ```

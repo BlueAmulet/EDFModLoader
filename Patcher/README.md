@@ -35,4 +35,5 @@ The following types are supported:
 
 ## Included Patches
 [EDF4.1 Patches](https://github.com/BlueAmulet/EDFModLoader/blob/master/Patcher/EDF41/Patches.md)  
-[EDF5 Patches](https://github.com/BlueAmulet/EDFModLoader/blob/master/Patcher/EDF5/Patches.md)
+[EDF5 Patches](https://github.com/BlueAmulet/EDFModLoader/blob/master/Patcher/EDF5/Patches.md)  
+[EDF6 Patches](https://github.com/BlueAmulet/EDFModLoader/blob/master/Patcher/EDF6/Patches.md)  
