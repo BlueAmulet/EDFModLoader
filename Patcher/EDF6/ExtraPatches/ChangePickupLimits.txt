@@ -1,0 +1,5 @@
+; Author: demonized and redone
+2C7709: u32! 128 ; Maximum pickups on a map at once. Default 128
+
+2C737A: u32! 1024 ;Maximum pickups per mission. Default 1024
+2C73C7: u32! 1024 ;Synchronize with above value

@@ -1,5 +1,5 @@
 ; Author: BlueAmulet
-198599: u32! 128 ; Maximum number of pickups on a map at one time. Default 128
+198599: u32! 128 ; Maximum pickups on a map at once. Default 128
 
-1990CC: u32! 1024 ;Maximum number of pickups per mission. Default 1024
+1990CC: u32! 1024 ;Maximum pickups per mission. Default 1024
 1990EC: u32! 1024 ;Synchronize with above value
