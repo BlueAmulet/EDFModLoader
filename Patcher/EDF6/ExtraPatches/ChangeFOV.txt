@@ -1,8 +1,15 @@
 ; Author: BlueAmulet, based on Souzooka's EDF5 patch
 ; See https://reddit.com/r/EDF/comments/d7mjhw//f17bbwn/ for picture reference (EDF5)
-;F867A: BE 31 ; 0.5 (29 vFOV)
-F867A: 92 93 ; Default (45 vFOV)
-;F867A: 02 94 ; 1.0 (57 vFOV)
-;F867A: 86 59 6A ; 1.25 (71 vFOV)
-;F867A: 7A CA ; 1.5 (86 vFOV)
-;F867A: 32 95 ; Quake Pro
+; Values are in radians
+
+alloc vFOV 4
+vFOV:
+;f32! 0.5235988 ; 30 vFOV
+f32! 0.7853982 ; 45 vFOV (Default)
+;f32! 1.0471976 ; 60 vFOV
+;f32! 1.3089969 ; 75 vFOV
+;f32! 1.5707964 ; 90 vFOV
+;f32! 2.9670596 ; Quake Pro
+
+aob vFOVoff F3 0F 10 05 ?? ?? ?? ?? F3 0F 5E 87 10 04 00 00
+vFOVoff+4: rel32! vFOV

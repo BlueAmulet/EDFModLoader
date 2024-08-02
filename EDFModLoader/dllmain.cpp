@@ -1,4 +1,5 @@
 #define _CRT_SECURE_NO_WARNINGS
+#define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 
 #define PLOG_OMIT_LOG_DEFINES
@@ -8,9 +9,6 @@
 #include <cstdio>
 #include <memory.h>
 
-#include <windows.h>
-#include <shlwapi.h>
-
 #include <MinHook.h>
 #include <plog/Log.h>
 #include <plog/Initializers/RollingFileInitializer.h>
@@ -18,6 +16,9 @@
 #include "proxy.h"
 #include "PluginAPI.h"
 #include "LoggerTweaks.h"
+
+#include <windows.h>
+#include <shlwapi.h>
 
 
 typedef struct {
