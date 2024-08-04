@@ -1,2 +1,3 @@
 ; Author: Souzooka
-71E4A2: 90 E9
+aob ChatFilter 604885C90F84BF
+ChatFilter+4: 90 E9

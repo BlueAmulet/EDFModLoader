@@ -1,2 +1,3 @@
 ; Author: BlueAmulet
-702CC2: 90 E9
+aob EOSCheck 200F845E
+EOSCheck+1: 90 E9

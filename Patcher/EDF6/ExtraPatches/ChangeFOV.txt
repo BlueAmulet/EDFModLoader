@@ -11,5 +11,5 @@ f32! 0.7853982 ; 45 vFOV (Default)
 ;f32! 1.5707964 ; 90 vFOV
 ;f32! 2.9670596 ; Quake Pro
 
-aob vFOVoff F3 0F 10 05 ?? ?? ?? ?? F3 0F 5E 87 10 04 00 00
+aob vFOVoff F30F1005????????F30F5E87
 vFOVoff+4: rel32! vFOV

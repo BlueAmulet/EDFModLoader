@@ -12,6 +12,7 @@
 #include <MinHook.h>
 #include <plog/Log.h>
 #include <plog/Initializers/RollingFileInitializer.h>
+#include <LightningScanner/LightningScanner.hpp>
 
 #include "proxy.h"
 #include "PluginAPI.h"
@@ -19,6 +20,7 @@
 
 #include <windows.h>
 #include <shlwapi.h>
+#include <psapi.h>
 
 
 typedef struct {
@@ -36,8 +38,8 @@ static std::vector<void*> hooks; // Holds all original hooked functions
 typedef void* (__fastcall *initterm_func)(void*, void*);
 static initterm_func initterm_orig;
 // Handles opening files from disk or through CRI File System
-typedef void* (__fastcall *fnk244d0_func)(void*, void*, void*);
-static fnk244d0_func fnk244d0_orig;
+typedef void* (__fastcall *crifsio_func)(void*, void*, void*);
+static crifsio_func crifsio_orig;
 // Puts wchar_t* in wstring
 typedef void* (__fastcall *wstrassign_func)(void*, const wchar_t*, size_t);
 static wstrassign_func wstrassign_orig;
@@ -143,12 +145,7 @@ typedef struct {
 	int version;
 } PointerSet;
 
-int pointerSet = -1;
-PointerSet psets[3] = {
-	{0xaa36d0, L"EarthDefenceForce 4.1 for Windows", "EDF41", "EML4_Load", {0x667102, 0x8ed80, 0x91580, 0x91790}, 41}, // EDF 4.1
-	{0xebcbd0, L"EarthDefenceForce 5 for PC", "EDF5", "EML5_Load", {0x9c835a, 0x244d0, 0x27380, 0x27680}, 5}, // EDF 5
-	{0x17e4210, L"EarthDefenceForce 6 for PC", "EDF6", "EML6_Load", {0x12d6f26, 0x748d0, 0x3d440, 0x3e490}, 6}, // EDF 6
-};
+static const char *plugFunc;
 
 // Search and load all *.dll files in Mods\Plugins\ folder
 static void LoadPluginsFromPath(LPCWSTR path, bool asi) {
@@ -166,7 +163,7 @@ static void LoadPluginsFromPath(LPCWSTR path, bool asi) {
 				PLOG_INFO << "Loading Plugin: " << plugpath;
 				HMODULE plugin = LoadLibraryW(plugpath);
 				if (plugin != NULL) {
-					LoadDef loadfunc = (LoadDef)GetProcAddress(plugin, psets[pointerSet].plugfunc);
+					LoadDef loadfunc = (LoadDef)GetProcAddress(plugin, plugFunc);
 					bool unload = false;
 					if (loadfunc != NULL) {
 						PluginInfo *pluginInfo = new PluginInfo();
@@ -208,7 +205,7 @@ static void LoadPluginsFromPath(LPCWSTR path, bool asi) {
 							procedure();
 						}
 					} else {
-						PLOG_WARNING << "Plugin does not contain " << psets[pointerSet].plugfunc << " function";
+						PLOG_WARNING << "Plugin does not contain " << plugFunc << " function";
 						unload = true;
 					}
 					if (unload) {
@@ -270,7 +267,7 @@ struct oddstr {
 };
 static_assert(sizeof(oddstr) == 32, "Weird string structure should have a length of 32");
 
-static void *__fastcall fnk244d0_hook(void *unk1, oddstr *str, void *unk2) {
+static void *__fastcall crifsio_hook(void *unk1, oddstr *str, void *unk2) {
 	// First 8 bytes are a pointer if length >= 8
 	// Otherwise string is stored where pointer will be?
 	wchar_t *path = (wchar_t*)str;
@@ -290,7 +287,7 @@ static void *__fastcall fnk244d0_hook(void *unk1, oddstr *str, void *unk2) {
 		}
 		delete[] modpath;
 	}
-	return fnk244d0_orig(unk1, str, unk2);
+	return crifsio_orig(unk1, str, unk2);
 }
 
 // Internal logging hook
@@ -361,6 +358,21 @@ static const char ModLoaderStr[] = "ModLoader";
 PBYTE hmodEXE;
 char hmodName[MAX_PATH];
 
+PointerSet psets[] = {
+	{0xaa36d0, L"EarthDefenceForce 4.1 for Windows", "EDF41", "EML4_Load", {0x667102, 0x8ed80, 0x91580, 0x91790}, 41}, // EDF 4.1
+	{0xebcbd0, L"EarthDefenceForce 5 for PC", "EDF5", "EML5_Load", {0x9c835a, 0x244d0, 0x27380, 0x27680}, 5},          // EDF 5
+};
+
+static uintptr_t ScanPtr(LightningScanner::ScanResult result) {
+	void *addr = result.Get<void>();
+	if (addr != NULL) {
+		// Return the result as an offset to the executable
+		return (uintptr_t)addr - (uintptr_t)hmodEXE;
+	} else {
+		return NULL;
+	}
+}
+
 void SetupHook(uintptr_t offset, void **func, void* hook, const char *reason, BOOL active) {
 	if (!offset) {
 		PLOG_INFO << "Skipping unsupported " << hmodName << " hook (" << reason << ")";
@@ -412,48 +424,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		PluginInfo *selfInfo = new PluginInfo;
 		selfInfo->infoVersion = PluginInfo::MaxInfoVer;
 		selfInfo->name = "EDFModLoader";
-		selfInfo->version = PLUG_VER(1, 0, 8, 0);
+		selfInfo->version = PLUG_VER(1, 0, 9, 0);
 		PluginData *selfData = new PluginData;
 		selfData->info = selfInfo;
 		selfData->module = hModule;
 		plugins.push_back(selfData);
 
-		// Determine what game is hosting us
-		hmodEXE = (PBYTE)GetModuleHandleW(NULL);
-		if (hmodEXE == NULL) {
-			PLOG_ERROR << "Failed to retrieve a handle to the currently running game";
-			return FALSE;
-		}
-		GetModuleFileNameA((HMODULE)hmodEXE, hmodName, _countof(hmodName));
-		char *hmodFName = PathFindFileNameA(hmodName);
-		memmove(hmodName, hmodFName, strlen(hmodFName) + 1);
-		for (int i = 0; i < _countof(psets); i++) {
-			// TODO: Hack to support EDF6
-			if (lstrcmpiA(hmodName, "EDF6.exe") == 0 && psets[i].version == 6)
-			{
-				hmodEXE = (PBYTE)GetModuleHandleW(L"EDF.dll");
-				if (hmodEXE == NULL) {
-					PLOG_ERROR << "Failed to retrieve a handle to EDF.dll";
-					return FALSE;
-				}
-				GetModuleFileNameA((HMODULE)hmodEXE, hmodName, _countof(hmodName));
-				char *hmodFName = PathFindFileNameA(hmodName);
-				memmove(hmodName, hmodFName, strlen(hmodFName) + 1);
-			}
-			size_t search_len = wcslen(psets[i].search);
-			if (!IsBadReadPtr(hmodEXE + psets[i].offset, search_len+1) && !wcsncmp((wchar_t*)(hmodEXE + psets[i].offset), psets[i].search, search_len)) {
-				pointerSet = i;
-				break;
-			}
-		}
-		if (pointerSet == -1) {
-			PLOG_ERROR << "Failed to determine what exe is running";
-			return FALSE;
-		}
-		FuncOffsets pointers = psets[pointerSet].pointers;
-
 		PluginVersion v = selfInfo->version;
-		PLOG_INFO.printf("EDFModLoader (%s) v%u.%u.%u Initializing\n", psets[pointerSet].ident, v.major, v.minor, v.patch);
+		PLOG_INFO.printf("EDFModLoader v%u.%u.%u Initializing\n", v.major, v.minor, v.patch);
 
 		// Setup DLL proxy
 		wchar_t path[MAX_PATH];
@@ -466,8 +444,94 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		wcscat_s(path, L"\\System32\\winmm.dll");
 
 		PLOG_INFO << "Loading real winmm.dll";
+		HMODULE syswinmm = LoadLibraryW(path);
+		if (syswinmm == NULL) {
+			DWORD dwError = GetLastError();
+			PLOG_ERROR << "Failed to load system winmm.dll: error " << dwError;
+			return FALSE;
+		}
 		PLOG_INFO << "Setting up dll proxy functions";
-		setupFunctions(LoadLibraryW(path));
+		setupFunctions(syswinmm);
+
+		// Determine what game is hosting us
+		hmodEXE = (PBYTE)GetModuleHandleW(NULL);
+		if (hmodEXE == NULL) {
+			PLOG_ERROR << "Failed to retrieve a handle to the currently running game";
+			break;
+		}
+		GetModuleFileNameA((HMODULE)hmodEXE, hmodName, _countof(hmodName));
+		char *hmodFName = PathFindFileNameA(hmodName);
+		memmove(hmodName, hmodFName, strlen(hmodFName) + 1);
+
+		int pointerSet = -1;
+		for (int i = 0; i < _countof(psets); i++) {
+			size_t search_len = wcslen(psets[i].search);
+			if (!IsBadReadPtr(hmodEXE + psets[i].offset, search_len+1) && !wcsncmp((wchar_t*)(hmodEXE + psets[i].offset), psets[i].search, search_len)) {
+				pointerSet = i;
+				break;
+			}
+		}
+		FuncOffsets pointers = {};
+		if (pointerSet != -1) {
+			PLOG_INFO << "Running under " << psets[pointerSet].ident;
+			pointers = psets[pointerSet].pointers;
+			plugFunc = psets[pointerSet].plugfunc;
+		} else if (lstrcmpiA(hmodName, "EDF6.exe") == 0) {
+			PLOG_INFO << "Running under EDF6";
+			plugFunc = "EML6_Load";
+
+			// Get a handle to EDF.dll
+			hmodEXE = (PBYTE)GetModuleHandleW(L"EDF.dll");
+			if (hmodEXE == NULL) {
+				PLOG_ERROR << "Failed to retrieve a handle to EDF.dll";
+				break;
+			}
+
+			// Determine bounds of executable
+			MODULEINFO modInfo = {};
+			if (!GetModuleInformation(GetCurrentProcess(), (HMODULE)hmodEXE, &modInfo, sizeof(MODULEINFO))) {
+				PLOG_ERROR << "Failed to fetch size information for EDF.dll";
+				break;
+			}
+			size_t ScanRange = modInfo.SizeOfImage - 32; // Reduce range by 32 to workaround overrun bug in LightningScanner
+
+			// Update the module name
+			GetModuleFileNameA((HMODULE)hmodEXE, hmodName, _countof(hmodName));
+			char *hmodFName = PathFindFileNameA(hmodName);
+			memmove(hmodName, hmodFName, strlen(hmodFName) + 1);
+
+			// Hook the DLLs secondary entrypoint for additional initialization
+			pointers.initterm = (uintptr_t)GetProcAddress((HMODULE)hmodEXE, "CPP_OnBoot");
+			if (pointers.initterm != NULL) {
+				pointers.initterm -= (uintptr_t)hmodEXE;
+			} else {
+				PLOG_ERROR << "Failed to locate CPP_OnBoot function";
+			}
+
+			// Find patch points via pointer scanning
+			LightningScanner::Scanner scanner("");
+
+			scanner = LightningScanner::Scanner("48895C2418488974242055574156488BEC4883EC70488B05????F7");
+			pointers.redirect = ScanPtr(scanner.Find(hmodEXE, ScanRange));
+			if (pointers.redirect == NULL) {
+				PLOG_ERROR << "Failed to locate CriFsIo function";
+			}
+
+			scanner = LightningScanner::Scanner("48895C240848896C2410488974241857415641574883EC20488B71");
+			pointers.wstrassign = ScanPtr(scanner.Find(hmodEXE, ScanRange));
+			if (pointers.wstrassign == NULL) {
+				PLOG_ERROR << "Failed to locate std::wstring::assign function";
+			}
+
+			scanner = LightningScanner::Scanner("48895424104C894424184C894C2420C3488D");
+			pointers.gamelog = ScanPtr(scanner.Find(hmodEXE, ScanRange));
+			if (pointers.gamelog == NULL) {
+				PLOG_ERROR << "Failed to locate game debug logging function";
+			}
+		} else {
+			PLOG_ERROR << "Failed to determine what exe is running";
+			break;
+		}
 
 		// Create ModLoader folders
 		CreateDirectoryW(L"Mods", NULL);
@@ -476,7 +540,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		// Initialize MinHook
 		if (MH_Initialize() != MH_OK) {
 			PLOG_ERROR << "Failed to initialize MinHook";
-			return FALSE;
+			break;
 		}
 
 		// Hook function for additional ModLoader initialization
@@ -484,7 +548,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 		// Add Mods folder redirector hook
 		wstrassign_orig = (wstrassign_func)((PBYTE)hmodEXE + pointers.wstrassign);
-		SetupHook(pointers.redirect, (PVOID*)&fnk244d0_orig, fnk244d0_hook, "Mods folder redirector", Redirect);
+		if (pointers.wstrassign) {
+			SetupHook(pointers.redirect, (PVOID *)&crifsio_orig, crifsio_hook, "Mods folder redirector", Redirect);
+		} else {
+			PLOG_INFO << "Skipping unsupported " << hmodName << " hook (Mods folder redirector, no std::wstring::assign)";
+		}
 
 		// Add internal logging hook
 		SetupHook(pointers.gamelog, (PVOID*)&gamelog_orig, gamelog_hook, "Interal logging hook", GameLog);
