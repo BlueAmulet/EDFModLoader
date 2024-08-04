@@ -161,6 +161,7 @@ void EMLCommon_Load(BOOL EDF6) {
 		ltprintf("Failed to fetch size information for %s", hmodName);
 		return;
 	}
+	size_t ScanRange = modInfo.SizeOfImage - 32; // Reduce range by 32 to workaround overrun bug in LightningScanner
 
 	SYSTEM_INFO sysInfo = {0};
 	GetSystemInfo(&sysInfo);
@@ -289,14 +290,16 @@ void EMLCommon_Load(BOOL EDF6) {
 
 										// TODO: Validate pattern
 										if (valid) {
-											const auto scanner = LightningScanner::Scanner(LightningScanner::Pattern(pattern));
-											void *result = scanner.Find(hmodEXE, modInfo.SizeOfImage).Get<void>();
+											const LightningScanner::Scanner scanner = LightningScanner::Scanner(LightningScanner::Pattern(pattern));
+											void *result = scanner.Find(hmodEXE, ScanRange).Get<void>();
 											if (result != NULL) {
 												labels[symbol] = (uintptr_t)result - (uintptr_t)hmodEXE;
 												ltprintf("AOB scan found %s at %I64X", symbol.c_str(), labels[symbol]);
 											} else {
 												ltprintf("AOB scan failed: %s: %s", symbol.c_str(), pattern.c_str());
 												patch = false;
+												// Create dummy label anyway to reduce future errors
+												labels[symbol] = (uintptr_t)hmodEXE;
 											}
 										} else {
 											patch = false;
@@ -401,7 +404,8 @@ void EMLCommon_Load(BOOL EDF6) {
 													ltprintf("Allocation failed: %s bytes for %s", sizeStr, arguments[0].c_str());
 													patch = false;
 												}
-											} else {
+											}
+											if (!patch) {
 												// Patch failed, but create dummy label anyway to reduce future errors
 												labels[arguments[0]] = (uintptr_t)target - (uintptr_t)hmodEXE;
 											}
