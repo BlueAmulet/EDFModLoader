@@ -130,19 +130,589 @@ static uint8_t CharToByteUnsafe(char symbol) {
 	}
 }
 
-void EMLCommon_Load(BOOL EDF6) {
-	hLogFile = fopen("Patcher.log", "wb");
-	ltputs("EDF Patcher v1.1.0");
+class MemoryPatcher {
+  public:
+	explicit MemoryPatcher(HMODULE);
+	~MemoryPatcher();
+	bool Apply(std::wstring);
+	bool init; // TODO: Ugly but internal anyway
+  private:
+	bool ParseAddress(std::string, uintptr_t&);
+	void AddPatch(const uintptr_t, const uintptr_t, unsigned char*);
+	bool patch;
+	std::unordered_map<std::string, uintptr_t> labels;
+	std::vector<PatchRecord*> patches;
+	PBYTE mModule;
+	// Caches
+	char *mModName;
+	DWORD mSizeOfImage;
+	DWORD mScanRange;
+	DWORD mAllocationGranularity;
+};
 
-	PBYTE hmodEXE;
-	if (EDF6) {
-		// TODO: Hack to support EDF6
-		hmodEXE = (PBYTE)GetModuleHandleW(L"EDF.dll");
-	} else {
-		hmodEXE = (PBYTE)GetModuleHandleW(NULL);
+MemoryPatcher::MemoryPatcher(HMODULE module) {
+	mModule = (PBYTE)module;
+	mModName = NULL;
+	init = true;
+	patch = false;
+	mSizeOfImage = 0;
+	mScanRange = 0;
+
+	// Get system allocation granularity
+	SYSTEM_INFO sysInfo = {0};
+	GetSystemInfo(&sysInfo);
+	mAllocationGranularity = sysInfo.dwAllocationGranularity;
+
+	// Fetch executable name
+	mModName = new char[MAX_PATH];
+	if (!GetModuleFileNameA(module, mModName, MAX_PATH)) {
+		ltputs("Failed to fetch filename of executable");
+		delete[] mModName;
+		mModName = NULL;
+		init = false;
+		return;
 	}
-	if (hmodEXE == NULL)
-	{
+	char *hmodFName = PathFindFileNameA(mModName);
+	memmove(mModName, hmodFName, strlen(hmodFName) + 1);
+
+	// Determine bounds of module
+	MODULEINFO modInfo = {0};
+	if (!GetModuleInformation(GetCurrentProcess(), module, &modInfo, sizeof(MODULEINFO))) {
+		ltprintf("Failed to fetch size information for %s", mModName);
+		delete[] mModName;
+		mModName = NULL;
+		init = false;
+		return;
+	}
+	mSizeOfImage = modInfo.SizeOfImage;
+	mScanRange = modInfo.SizeOfImage - 32; // Reduce range by 32 to workaround overrun bug in LightningScanner
+}
+
+MemoryPatcher::~MemoryPatcher() {
+	if (mModName != NULL) {
+		delete[] mModName;
+	}
+}
+
+bool MemoryPatcher::ParseAddress(std::string addressStr, uintptr_t &address) {
+	size_t opos;
+	std::string baseStr = addressStr;
+	std::string offsetStr;
+	bool negative;
+	bool valid = true;
+
+	// Check for offset
+	if ((opos = addressStr.find('+')) != std::string::npos) {
+		negative = false;
+		baseStr = addressStr.substr(0, opos);
+		offsetStr = addressStr.substr(opos + 1);
+		trim_right(baseStr);
+		trim_left(offsetStr);
+	} else if ((opos = addressStr.find('-')) != std::string::npos) {
+		negative = true;
+		baseStr = addressStr.substr(0, opos);
+		offsetStr = addressStr.substr(opos + 1);
+		trim_right(baseStr);
+		trim_left(offsetStr);
+	}
+
+	// Validate address
+	if (std::find_if(baseStr.begin(), baseStr.end(), iswhitespace) == baseStr.end()) {
+		std::unordered_map<std::string, uintptr_t>::const_iterator got = labels.find(baseStr);
+		if (got != labels.end()) {
+			address = got->second;
+		} else if (baseStr.find_first_not_of("0123456789ABCDEFabcdef") == std::string::npos) {
+			address = strtoull(baseStr.c_str(), NULL, 16);
+		} else {
+			ltprintf("Malformed patch input: Undefined label: %s", baseStr.c_str());
+			valid = false;
+		}
+	} else {
+		ltprintf("Malformed patch input: Labels cannot contain whitespace: %s", baseStr.c_str());
+		valid = false;
+	}
+
+	// Add offset if present
+	if (!offsetStr.empty()) {
+		char *endPtr;
+		const char *offsetStrC = offsetStr.c_str();
+		size_t offset = strtoull(offsetStrC, &endPtr, 16);
+		if (endPtr == offsetStrC + offsetStr.size()) {
+			if (negative) {
+				address -= offset;
+			} else {
+				address += offset;
+			}
+		} else {
+			ltprintf("Malformed patch input: Invalid address offset: %s", addressStr.c_str());
+			valid = false;
+		}
+	}
+
+	if (!valid) {
+		patch = false;
+	}
+	return valid;
+}
+
+void MemoryPatcher::AddPatch(const uintptr_t offset, const size_t length, unsigned char *bytes) {
+	// Attempt to consolidate patches
+	if (!patches.empty()) {
+		PatchRecord *lastPatch = patches.back();
+		uintptr_t lastEnd = lastPatch->offset + lastPatch->length;
+
+		// Check if new patch is contained within last patch
+		if (lastPatch->offset <= offset && lastEnd >= offset + length) {
+			memcpy(lastPatch->bytes + offset - lastPatch->offset, bytes, length);
+			delete[] bytes;
+			return;
+		}
+
+		// Check if new patch can extend the last patch
+		if (lastPatch->offset <= offset && offset <= lastEnd) {
+			size_t offsetDiff = offset - lastPatch->offset;
+			size_t newLength = offsetDiff + length;
+			unsigned char *merged = new unsigned char[newLength];
+			memcpy(merged, lastPatch->bytes, offsetDiff);
+			memcpy(merged + offsetDiff, bytes, length);
+			delete[] bytes;
+			delete[] lastPatch->bytes;
+			lastPatch->bytes = merged;
+			lastPatch->length = newLength;
+			return;
+		}
+	}
+	// Create a new patch
+	PatchRecord *record = new PatchRecord;
+	record->offset = offset;
+	record->bytes = bytes;
+	record->length = length;
+	patches.push_back(record);
+}
+
+bool MemoryPatcher::Apply(std::wstring filename) {
+	// Reset state
+	patch = true;
+	labels.clear();
+	patches.clear();
+
+	// Read file
+	std::fstream pfile(filename, std::ios::in);
+	if (pfile.is_open()) {
+		uintptr_t lastOffset = 0;
+		char *endPtr;
+		std::string patchInput;
+		std::vector<void*> tempAlloc;
+		while (getline(pfile, patchInput)) {
+			// Remove comments
+			size_t scpos = patchInput.find(';');
+			if (scpos != std::string::npos) {
+				patchInput = patchInput.substr(0, scpos);
+			}
+
+			// Trim whitespace
+			trim(patchInput);
+
+			// Ignore empty lines
+			if (patchInput.empty()) {
+				continue;
+			}
+
+			// Check for colon
+			size_t cpos = patchInput.find(':');
+			std::string addressStr;
+			std::string patchData = patchInput;
+			if (cpos != std::string::npos) {
+				// Split input into two parts
+				addressStr = patchInput.substr(0, cpos);
+				trim_right(addressStr);
+
+				// Verify address does not have whitespace, otherwise ignore
+				if (!std::any_of(addressStr.begin(), addressStr.end(), iswhitespace)) {
+					patchData = patchInput.substr(cpos + 1);
+					trim_left(patchData);
+					ParseAddress(addressStr, lastOffset);
+				} else {
+					// Probably a colon in the middle of a command, don't treat as an address
+					addressStr.clear();
+				}
+			}
+			if (!patchData.empty()) {
+				// Check for commands
+				std::string command = patchData;
+				std::string argument;
+				std::string::iterator spos = std::find_if(command.begin(), command.end(), iswhitespace);
+				if (spos != command.end()) {
+					argument = command.substr(spos - command.begin() + 1);
+					command = command.substr(0, spos - command.begin());
+					trim_left(argument);
+				}
+
+				if (command == "aob") {
+					if (!argument.empty()) {
+						// Split off the symbol from the rest of the command
+						spos = std::find_if(argument.begin(), argument.end(), iswhitespace);
+						if (spos != argument.end()) {
+							std::string symbol = argument.substr(0, spos - argument.begin());
+							std::string pattern = argument.substr(spos - argument.begin() + 1);
+							trim_left(pattern);
+							bool valid = true;
+
+							// Validate symbol name
+							if (std::find_if(symbol.begin(), symbol.end(), labelfilter) != symbol.end()) {
+								ltprintf("Malformed patch input: Invalid label name: %s", symbol.c_str());
+								valid = false;
+							}
+
+							// TODO: Validate pattern
+							if (valid) {
+								const LightningScanner::Scanner scanner = LightningScanner::Scanner(LightningScanner::Pattern(pattern));
+								void *result = scanner.Find(mModule, mScanRange).Get<void>();
+								if (result != NULL) {
+									labels[symbol] = (uintptr_t)result - (uintptr_t)mModule;
+									ltprintf("AOB scan found %s at %I64X", symbol.c_str(), labels[symbol]);
+								} else {
+									ltprintf("AOB scan failed: %s: %s", symbol.c_str(), pattern.c_str());
+									patch = false;
+									// Create dummy label anyway to reduce future errors
+									labels[symbol] = (uintptr_t)mModule;
+								}
+							} else {
+								patch = false;
+							}
+						} else {
+							ltputs("Malformed patch input: Command aob requires 2 arguments, 1 given");
+							patch = false;
+						}
+					} else {
+						ltputs("Malformed patch input: Command aob requires 2 arguments, 0 given");
+						patch = false;
+					}
+				} else if (command == "alloc") {
+					if (!argument.empty()) {
+						// Split arguments up by whitespace
+						std::vector<std::string> arguments;
+						std::string::iterator start = argument.begin();
+						do {
+							std::string::iterator idx = std::find_if(start, argument.end(), iswhitespace);
+							if (idx == argument.end()) {
+								break;
+							}
+							if (idx != start) {
+								arguments.push_back(argument.substr(start - argument.begin(), idx - start));
+							}
+							start = idx + 1;
+						} while (true);
+						arguments.push_back(argument.substr(start - argument.begin()));
+
+						if (arguments.size() < 2) {
+							ltputs("Malformed patch input: Command alloc requires at least 2 arguments, 1 given");
+							patch = false;
+						} else if (arguments.size() > 3) {
+							ltprintf("Malformed patch input: Command alloc takes at most 3 arguments, %I64u given", arguments.size());
+							patch = false;
+						} else {
+							bool valid = true;
+							void *target = mModule;
+
+							// Validate label name
+							if (std::find_if(arguments[0].begin(), arguments[0].end(), labelfilter) != arguments[0].end()) {
+								ltprintf("Malformed patch input: Invalid label name: %s", arguments[0].c_str());
+								valid = false;
+							}
+
+							// Parse allocation size
+							const char *sizeStr = arguments[1].c_str();
+							size_t allocSize = strtoull(sizeStr, &endPtr, 0);
+							if (endPtr != sizeStr + arguments[1].size()) {
+								ltprintf("Malformed patch input: Invalid allocation size: %s", sizeStr);
+								valid = false;
+							}
+
+							// Parse target address if present
+							if (arguments.size() == 3) {
+								std::unordered_map<std::string, uintptr_t>::const_iterator got = labels.find(arguments[2]);
+								if (got != labels.end()) {
+									target = mModule + got->second;
+								} else {
+									const char *targetAddr = arguments[2].c_str();
+									size_t value = strtoull(targetAddr, &endPtr, 16);
+									if (endPtr == targetAddr + arguments[2].size()) {
+										target = mModule + value;
+									} else {
+										ltprintf("Malformed patch input: Invalid allocation address: %s", targetAddr);
+										valid = false;
+									}
+								}
+							}
+							if (valid) {
+								if (patch) {
+									void *alloc = NULL;
+									bool forward = false;
+									void *originalTarget = target;
+									// Attempt to find an address close to our target
+									do {
+										alloc = VirtualAlloc(target, allocSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+										if (alloc == NULL) {
+											MEMORY_BASIC_INFORMATION mbi = {};
+											if (VirtualQuery(target, &mbi, sizeof(MEMORY_BASIC_INFORMATION))) {
+												if (forward) {
+													target = (PBYTE)mbi.BaseAddress + mbi.RegionSize;
+												} else {
+													target = (PBYTE)mbi.BaseAddress - mAllocationGranularity;
+												}
+											} else {
+												if (!forward) {
+													// Try again moving forward this time
+													forward = true;
+													target = originalTarget;
+												} else {
+													break;
+												}
+											}
+										}
+									} while (alloc == NULL);
+									if (alloc != NULL) {
+										ltprintf("Allocated %s bytes at %p", sizeStr, alloc);
+										labels[arguments[0]] = (uintptr_t)alloc - (uintptr_t)mModule;
+										tempAlloc.push_back(alloc);
+									} else {
+										ltprintf("Allocation failed: %s bytes for %s", sizeStr, arguments[0].c_str());
+										patch = false;
+									}
+								}
+								if (!patch) {
+									// Patch failed, but create dummy label anyway to reduce future errors
+									labels[arguments[0]] = (uintptr_t)target - (uintptr_t)mModule;
+								}
+							} else {
+								patch = false;
+							}
+						}
+					} else {
+						ltputs("Malformed patch input: Command alloc requires at least 2 arguments, 0 given");
+						patch = false;
+					}
+				} else if (command == "label") {
+					if (argument.empty()) {
+						ltputs("Malformed patch input: Command label requires 1 argument, 0 given");
+						patch = false;
+					} else if (std::find_if(argument.begin(), argument.end(), labelfilter) != argument.end()) {
+						ltprintf("Malformed patch input: Invalid label name: %s", argument.c_str());
+						patch = false;
+					} else {
+						labels[argument] = lastOffset;
+					}
+				} else {
+					// Check for type delimiter
+					size_t tpos = patchData.find('!');
+					if (tpos != std::string::npos) {
+						std::string patchType = patchData.substr(0, tpos);
+						std::string patchValue = patchData.substr(tpos + 1);
+						trim_right(patchType);
+						trim_left(patchValue);
+						PatchType pType;
+						size_t iLimitMax;
+						SSIZE_T iLimitMin = 0;
+						size_t iLength;
+						bool needValue = false;
+
+						// Validate patch input
+						if (patchType == "float" || patchType == "f32") {
+							pType = PatchType::kFloat;
+							iLength = sizeof(float);
+							needValue = true;
+						} else if (patchType == "double" || patchType == "f64") {
+							pType = PatchType::kDouble;
+							iLength = sizeof(double);
+							needValue = true;
+						} else if (patchType == "rel32") {
+							pType = PatchType::kRelative;
+							iLength = 4;
+							needValue = true;
+						} else if (patchType == "rel64") {
+							pType = PatchType::kRelative;
+							iLength = 8;
+							needValue = true;
+						} else if (patchType.length() >= 2 && (patchType[0] == 's' || patchType[0] == 'u' || patchType[0] == 'n' || patchType[0] == 'p')) {
+							pType = PatchType::kInteger;
+							needValue = true;
+							std::string patchLength = patchType.substr(1);
+							if (patchLength == "8") {
+								iLength = 1;
+								iLimitMax = 0xFF;
+							} else if (patchLength == "16") {
+								iLength = 2;
+								iLimitMax = 0xFFFF;
+							} else if (patchLength == "32") {
+								iLength = 4;
+								iLimitMax = 0xFFFFFFFF;
+							} else if (patchLength == "64") {
+								iLength = 8;
+								iLimitMax = 0xFFFFFFFFFFFFFFFF;
+							} else {
+								ltprintf("Unknown patch type: %s", patchType.c_str());
+								patch = false;
+							}
+						} else {
+							ltprintf("Unknown patch type: %s", patchType.c_str());
+							patch = false;
+						}
+						if (patch && needValue && patchValue.empty()) {
+							ltprintf("Malformed patch input: Patch type %s requires additional value", patchType.c_str());
+							patch = false;
+						}
+						if (patch) {
+							// Decode patch value
+							unsigned char *bytes = NULL;
+							const char *patchValueC = patchValue.c_str();
+							if (pType == PatchType::kFloat) {
+								float value = strtof(patchValueC, &endPtr);
+								if (endPtr == patchValueC + patchValue.size()) {
+									bytes = new unsigned char[iLength];
+									memcpy(bytes, &value, iLength);
+								} else {
+									ltprintf("Malformed patch input: Patch value could not be parsed: %s", patchData.c_str());
+									patch = false;
+								}
+							} else if (pType == PatchType::kDouble) {
+								double value = strtod(patchValueC, &endPtr);
+								if (endPtr == patchValueC + patchValue.size()) {
+									bytes = new unsigned char[iLength];
+									memcpy(bytes, &value, iLength);
+								} else {
+									ltprintf("Malformed patch input: Patch value could not be parsed: %s", patchData.c_str());
+									patch = false;
+								}
+							} else if (pType == PatchType::kInteger) {
+								if (patchType[0] != 'u') {
+									// Correct limits
+									iLimitMax /= 2;
+									iLimitMin = -((SSIZE_T)(iLimitMax)) - 1;
+									if (patchType[0] == 'p') { // Signed positive
+										iLimitMin = 0;
+									} else if (patchType[0] == 'n') { // Signed negative
+										iLimitMax = 0;
+									}
+									SSIZE_T value = strtoll(patchValueC, &endPtr, 0);
+									if (endPtr != patchValueC + patchValue.size()) {
+										ltprintf("Malformed patch input: Patch value could not be parsed: %s", patchData.c_str());
+										patch = false;
+									} else if (value > (SSIZE_T)iLimitMax || value < iLimitMin) {
+										ltprintf("Value limits exceeded: (%I64d, %I64u): %s", iLimitMin, iLimitMax, patchValueC);
+										patch = false;
+									} else {
+										bytes = new unsigned char[iLength];
+										memcpy(bytes, &value, iLength);
+									}
+								} else {
+									size_t value = strtoull(patchValueC, &endPtr, 0);
+									if (endPtr != patchValueC + patchValue.size()) {
+										ltprintf("Malformed patch input: Patch value could not be parsed: %s", patchData.c_str());
+										patch = false;
+									} else if (value > iLimitMax || patchValue[0] == '-') {
+										ltprintf("Value limits exceeded: (%I64d, %I64u): %s", iLimitMin, iLimitMax, patchValueC);
+										patch = false;
+									} else {
+										bytes = new unsigned char[iLength];
+										memcpy(bytes, &value, iLength);
+									}
+								}
+							} else if (pType == PatchType::kRelative) {
+								uintptr_t targetAddr;
+								if (ParseAddress(patchValue, targetAddr)) {
+									ptrdiff_t offset = targetAddr - lastOffset - iLength;
+									if (iLength == 4) {
+										// Verify relative address fits within 32bits
+										if (offset > INT32_MAX || offset < INT32_MIN) {
+											ltprintf("Relative offset too large: %I64x - %I64x", targetAddr, lastOffset);
+											patch = false;
+										}
+									}
+									if (patch) {
+										bytes = new unsigned char[iLength];
+										memcpy(bytes, &offset, iLength);
+									}
+								}
+							}
+							if (patch) {
+								AddPatch(lastOffset, iLength, bytes);
+								lastOffset += iLength;
+							}
+						}
+					} else {
+						// Strip uninportant characters from patch data
+						patchData.erase(std::remove_if(patchData.begin(), patchData.end(), patchfilter), patchData.end());
+						// Validate patch input
+						if (patchData.find_first_not_of("0123456789ABCDEFabcdef") != std::string::npos) {
+							ltputs("Malformed patch input: Non hexadecimal characters in patch data");
+							patch = false;
+						} else if (patchData.size() % 2 != 0) {
+							if (!addressStr.empty()) {
+								ltprintf("Malformed patch input: Incomplete patch data for address %s", addressStr.c_str());
+							} else {
+								ltprintf("Malformed patch input: Incomplete patch data at %I64X", lastOffset);
+							}
+							patch = false;
+						} else if (patch) {
+							// Parse patch input
+							size_t hsize = patchData.size() / 2;
+							unsigned char *bytes = new unsigned char[hsize];
+							for (size_t i = 0; i < patchData.size(); i += 2) {
+								bytes[i / 2] = CharToByteUnsafe(patchData[i]) << 4 | CharToByteUnsafe(patchData[i + 1]);
+							}
+							AddPatch(lastOffset, hsize, bytes);
+							lastOffset += hsize;
+						}
+					}
+				}
+			}
+		}
+		if (patch) {
+			// Apply memory patches
+			if (!patches.empty()) {
+				for (PatchRecord *record : patches) {
+					if (record->offset >= mSizeOfImage) {
+						ltprintf("Patching %I64d bytes at %p", record->length, mModule + record->offset);
+					} else {
+						ltprintf("Patching %I64d bytes at %s+%I64X", record->length, mModName, record->offset);
+					}
+					WriteBuffer(mModule + record->offset, record->bytes, record->length);
+				}
+				lputs("\n");
+			} else {
+				ltputs("No patches found in file\n");
+			}
+		} else {
+			ltputs("Ignoring patch\n");
+		}
+		pfile.close();
+
+		// Clean up memory
+		for (PatchRecord *precord : patches) {
+			delete[] precord->bytes;
+			delete precord;
+		}
+		labels.clear();
+		patches.clear();
+	} else {
+		ltputs("Failed to open patch file\n");
+		patch = false;
+	}
+	return patch;
+}
+
+void EMLCommon_Load(bool EDF6) {
+	hLogFile = fopen("Patcher.log", "wb");
+	ltputs("EDF Patcher v1.1.1");
+
+	HMODULE hModule;
+	if (EDF6) {
+		hModule = GetModuleHandleW(L"EDF.dll");
+	} else {
+		hModule = GetModuleHandleW(NULL);
+	}
+	if (hModule == NULL) {
 		if (EDF6) {
 			ltputs("Failed to get handle to EDF.dll");
 		} else {
@@ -150,24 +720,13 @@ void EMLCommon_Load(BOOL EDF6) {
 		}
 		return;
 	}
-	char hmodName[MAX_PATH];
-	GetModuleFileNameA((HMODULE)hmodEXE, hmodName, _countof(hmodName));
-	char *hmodFName = PathFindFileNameA(hmodName);
-	memmove(hmodName, hmodFName, strlen(hmodFName) + 1);
 
-	// Determine bounds of executable
-	MODULEINFO modInfo = {0};
-	if (!GetModuleInformation(GetCurrentProcess(), (HMODULE)hmodEXE, &modInfo, sizeof(MODULEINFO))) {
-		ltprintf("Failed to fetch size information for %s", hmodName);
+	MemoryPatcher patcher = MemoryPatcher(hModule);
+	if (!patcher.init) {
 		return;
 	}
-	size_t ScanRange = modInfo.SizeOfImage - 32; // Reduce range by 32 to workaround overrun bug in LightningScanner
-
-	SYSTEM_INFO sysInfo = {0};
-	GetSystemInfo(&sysInfo);
 
 	ltputs("Loading patches");
-	std::fstream pfile;
 	WIN32_FIND_DATAW ffd;
 	HANDLE hFind = FindFirstFileW(L"Mods\\Patches\\*.txt", &ffd);
 
@@ -175,474 +734,9 @@ void EMLCommon_Load(BOOL EDF6) {
 		do {
 			if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
 				ltwprintf(L"Loading patch: %s", ffd.cFileName);
-				wchar_t patchPath[MAX_PATH];
-				wcscpy_s(patchPath, L"Mods\\Patches\\");
-				wcscat_s(patchPath, ffd.cFileName);
-				pfile.open(patchPath, std::ios::in);
-				if (pfile.is_open()) {
-					bool patch = true;
-					uintptr_t lastOffset = 0;
-					char *endPtr;
-					std::string patchInput;
-					std::vector<PatchRecord*> patches;
-					std::vector<void*> tempAlloc;
-					std::unordered_map<std::string, uintptr_t> labels;
-					while (getline(pfile, patchInput)) {
-						// Remove comments
-						size_t scpos = patchInput.find(';');
-						if (scpos != std::string::npos) {
-							patchInput = patchInput.substr(0, scpos);
-						}
-
-						// Trim whitespace
-						trim(patchInput);
-
-						// Ignore empty lines
-						if (patchInput.empty()) {
-							continue;
-						}
-
-						// Check for colon
-						size_t cpos = patchInput.find(':');
-						std::string addressStr;
-						std::string patchData = patchInput;
-						if (cpos != std::string::npos) {
-							// Split input into two parts
-							addressStr = patchInput.substr(0, cpos);
-							trim_right(addressStr);
-
-							// Verify address does not have whitespace, otherwise ignore
-							if (!std::any_of(addressStr.begin(), addressStr.end(), iswhitespace)) {
-								patchData = patchInput.substr(cpos + 1);
-								trim_left(patchData);
-
-								size_t opos;
-								std::string address = addressStr;
-								std::string offsetStr;
-								bool negative;
-								if ((opos = addressStr.find('+')) != std::string::npos) {
-									offsetStr = addressStr.substr(opos + 1);
-									address = addressStr.substr(0, opos);
-									negative = false;
-								} else if ((cpos = addressStr.find('-')) != std::string::npos) {
-									offsetStr = addressStr.substr(opos + 1);
-									address = addressStr.substr(0, opos);
-									negative = true;
-								}
-
-								// Validate address
-								std::unordered_map<std::string, uintptr_t>::const_iterator got = labels.find(address);
-								if (got != labels.end()) {
-									lastOffset = got->second;
-								} else if (address.find_first_not_of("0123456789ABCDEFabcdef") == std::string::npos) {
-									lastOffset = strtoull(address.c_str(), NULL, 16);
-								} else {
-									ltprintf("Malformed patch input: Undefined label: %s", address.c_str());
-									patch = false;
-								}
-
-								// Add offset if present
-								if (!offsetStr.empty()) {
-									const char *offsetStrC = offsetStr.c_str();
-									size_t offset = strtoull(offsetStrC, &endPtr, 16);
-									if (endPtr == offsetStrC + offsetStr.size()) {
-										if (negative) {
-											lastOffset -= offset;
-										} else {
-											lastOffset += offset;
-										}
-									} else {
-										ltprintf("Malformed patch input: Invalid address offset: %s", addressStr.c_str());
-										patch = false;
-									}
-								}
-							} else {
-								// Probably a colon in the middle of a command, don't treat as an address
-								addressStr.clear();
-							}
-						}
-						if (!patchData.empty()) {
-							// Check for commands
-							std::string command = patchData;
-							std::string argument;
-							std::string::iterator spos = std::find_if(command.begin(), command.end(), iswhitespace);
-							if (spos != command.end()) {
-								argument = command.substr(spos - command.begin() + 1);
-								command = command.substr(0, spos - command.begin());
-								trim_left(argument);
-							}
-
-							if (command == "aob") {
-								if (!argument.empty()) {
-									// Split off the symbol from the rest of the command
-									spos = std::find_if(argument.begin(), argument.end(), iswhitespace);
-									if (spos != argument.end()) {
-										std::string symbol = argument.substr(0, spos - argument.begin());
-										std::string pattern = argument.substr(spos - argument.begin() + 1);
-										trim_left(pattern);
-										bool valid = true;
-
-										// Validate symbol name
-										if (std::find_if(symbol.begin(), symbol.end(), labelfilter) != symbol.end()) {
-											ltprintf("Malformed patch input: Invalid label name: %s", symbol.c_str());
-											valid = false;
-										}
-
-										// TODO: Validate pattern
-										if (valid) {
-											const LightningScanner::Scanner scanner = LightningScanner::Scanner(LightningScanner::Pattern(pattern));
-											void *result = scanner.Find(hmodEXE, ScanRange).Get<void>();
-											if (result != NULL) {
-												labels[symbol] = (uintptr_t)result - (uintptr_t)hmodEXE;
-												ltprintf("AOB scan found %s at %I64X", symbol.c_str(), labels[symbol]);
-											} else {
-												ltprintf("AOB scan failed: %s: %s", symbol.c_str(), pattern.c_str());
-												patch = false;
-												// Create dummy label anyway to reduce future errors
-												labels[symbol] = (uintptr_t)hmodEXE;
-											}
-										} else {
-											patch = false;
-										}
-									} else {
-										ltputs("Malformed patch input: Command aob requires 2 arguments, 1 given");
-										patch = false;
-									}
-								} else {
-									ltputs("Malformed patch input: Command aob requires 2 arguments, 0 given");
-									patch = false;
-								}
-							} else if (command == "alloc") {
-								if (!argument.empty()) {
-									// Split arguments up by whitespace
-									std::vector<std::string> arguments;
-									std::string::iterator start = argument.begin();
-									do {
-										std::string::iterator idx = std::find_if(start, argument.end(), iswhitespace);
-										if (idx == argument.end()) {
-											break;
-										}
-										if (idx != start) {
-											arguments.push_back(argument.substr(start - argument.begin(), idx - start));
-										}
-										start = idx + 1;
-									} while (true);
-									arguments.push_back(argument.substr(start - argument.begin()));
-
-									if (arguments.size() < 2) {
-										ltputs("Malformed patch input: Command alloc requires at least 2 arguments, 1 given");
-										patch = false;
-									} else if (arguments.size() > 3) {
-										ltprintf("Malformed patch input: Command alloc takes at most 3 arguments, %I64u given", arguments.size());
-										patch = false;
-									} else {
-										bool valid = true;
-										void *target = hmodEXE;
-
-										// Validate label name
-										if (std::find_if(arguments[0].begin(), arguments[0].end(), labelfilter) != arguments[0].end()) {
-											ltprintf("Malformed patch input: Invalid label name: %s", arguments[0].c_str());
-											valid = false;
-										}
-
-										// Parse allocation size
-										const char *sizeStr = arguments[1].c_str();
-										size_t allocSize = strtoull(sizeStr, &endPtr, 0);
-										if (endPtr != sizeStr + arguments[1].size()) {
-											ltprintf("Malformed patch input: Invalid allocation size: %s", sizeStr);
-											valid = false;
-										}
-
-										// Parse target address if present
-										if (arguments.size() == 3) {
-											std::unordered_map<std::string, uintptr_t>::const_iterator got = labels.find(arguments[2]);
-											if (got != labels.end()) {
-												target = hmodEXE + got->second;
-											} else {
-												const char *targetAddr = arguments[2].c_str();
-												size_t value = strtoull(targetAddr, &endPtr, 16);
-												if (endPtr == targetAddr + arguments[2].size()) {
-													target = hmodEXE + value;
-												} else {
-													ltprintf("Malformed patch input: Invalid allocation address: %s", targetAddr);
-													valid = false;
-												}
-											}
-										}
-										if (valid) {
-											if (patch) {
-												void *alloc = NULL;
-												bool forward = false;
-												void *originalTarget = target;
-												// Attempt to find an address close to our target
-												do {
-													alloc = VirtualAlloc(target, allocSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-													if (alloc == NULL) {
-														MEMORY_BASIC_INFORMATION mbi = {};
-														if (VirtualQuery(target, &mbi, sizeof(MEMORY_BASIC_INFORMATION))) {
-															if (forward) {
-																target = (PBYTE)mbi.BaseAddress + mbi.RegionSize;
-															} else {
-																target = (PBYTE)mbi.BaseAddress - sysInfo.dwAllocationGranularity;
-															}
-														} else {
-															if (!forward) {
-																// Try again moving forward this time
-																forward = true;
-																target = originalTarget;
-															} else {
-																break;
-															}
-														}
-													}
-												} while (alloc == NULL);
-												if (alloc != NULL) {
-													ltprintf("Allocated %s bytes at %p", sizeStr, alloc);
-													labels[arguments[0]] = (uintptr_t)alloc - (uintptr_t)hmodEXE;
-													tempAlloc.push_back(alloc);
-												} else {
-													ltprintf("Allocation failed: %s bytes for %s", sizeStr, arguments[0].c_str());
-													patch = false;
-												}
-											}
-											if (!patch) {
-												// Patch failed, but create dummy label anyway to reduce future errors
-												labels[arguments[0]] = (uintptr_t)target - (uintptr_t)hmodEXE;
-											}
-										} else {
-											patch = false;
-										}
-									}
-								} else {
-									ltputs("Malformed patch input: Command alloc requires at least 2 arguments, 0 given");
-									patch = false;
-								}
-							} else if (command == "label") {
-								if (argument.empty()) {
-									ltputs("Malformed patch input: Command label requires 1 argument, 0 given");
-									patch = false;
-								} else if (std::find_if(argument.begin(), argument.end(), labelfilter) != argument.end()) {
-									ltprintf("Malformed patch input: Invalid label name: %s", argument.c_str());
-									patch = false;
-								} else {
-									labels[argument] = lastOffset;
-								}
-							} else {
-								// Check for type delimiter
-								size_t tpos = patchData.find('!');
-								if (tpos != std::string::npos) {
-									std::string patchType = patchData.substr(0, tpos);
-									std::string patchValue = patchData.substr(tpos + 1);
-									trim_right(patchType);
-									trim_left(patchValue);
-									PatchType pType;
-									size_t iLimitMax;
-									SSIZE_T iLimitMin = 0;
-									size_t iLength;
-									bool needValue = false;
-
-									// Validate patch input
-									if (patchType == "float" || patchType == "f32") {
-										pType = PatchType::kFloat;
-										iLength = sizeof(float);
-										needValue = true;
-									} else if (patchType == "double" || patchType == "f64") {
-										pType = PatchType::kDouble;
-										iLength = sizeof(double);
-										needValue = true;
-									} else if (patchType == "rel32") {
-										pType = PatchType::kRelative;
-										iLength = 4;
-										needValue = true;
-									} else if (patchType == "rel64") {
-										pType = PatchType::kRelative;
-										iLength = 8;
-										needValue = true;
-									} else if (patchType.length() >= 2 && (patchType[0] == 's' || patchType[0] == 'u' || patchType[0] == 'n' || patchType[0] == 'p')) {
-										pType = PatchType::kInteger;
-										needValue = true;
-										std::string patchLength = patchType.substr(1);
-										if (patchLength == "8") {
-											iLength = 1;
-											iLimitMax = 0xFF;
-										} else if (patchLength == "16") {
-											iLength = 2;
-											iLimitMax = 0xFFFF;
-										} else if (patchLength == "32") {
-											iLength = 4;
-											iLimitMax = 0xFFFFFFFF;
-										} else if (patchLength == "64") {
-											iLength = 8;
-											iLimitMax = 0xFFFFFFFFFFFFFFFF;
-										} else {
-											ltprintf("Unknown patch type: %s", patchType.c_str());
-											patch = false;
-										}
-									} else {
-										ltprintf("Unknown patch type: %s", patchType.c_str());
-										patch = false;
-									}
-									if (patch && needValue && patchValue.empty()) {
-										ltprintf("Malformed patch input: Patch type %s requires additional value", patchType.c_str());
-										patch = false;
-									}
-									if (patch) {
-										// Decode patch value
-										unsigned char *bytes = NULL;
-										const char *patchValueC = patchValue.c_str();
-										if (pType == PatchType::kFloat) {
-											float value = strtof(patchValueC, &endPtr);
-											if (endPtr == patchValueC + patchValue.size()) {
-												bytes = new unsigned char[iLength];
-												memcpy(bytes, &value, iLength);
-											} else {
-												ltprintf("Malformed patch input: Patch value could not be parsed: %s", patchData.c_str());
-												patch = false;
-											}
-										} else if (pType == PatchType::kDouble) {
-											double value = strtod(patchValueC, &endPtr);
-											if (endPtr == patchValueC + patchValue.size()) {
-												bytes = new unsigned char[iLength];
-												memcpy(bytes, &value, iLength);
-											} else {
-												ltprintf("Malformed patch input: Patch value could not be parsed: %s", patchData.c_str());
-												patch = false;
-											}
-										} else if (pType == PatchType::kInteger) {
-											if (patchType[0] != 'u') {
-												// Correct limits
-												iLimitMax /= 2;
-												iLimitMin = -((SSIZE_T)(iLimitMax)) - 1;
-												if (patchType[0] == 'p') { // Signed positive
-													iLimitMin = 0;
-												} else if (patchType[0] == 'n') { // Signed negative
-													iLimitMax = 0;
-												}
-												SSIZE_T value = strtoll(patchValueC, &endPtr, 0);
-												if (endPtr != patchValueC + patchValue.size()) {
-													ltprintf("Malformed patch input: Patch value could not be parsed: %s", patchData.c_str());
-													patch = false;
-												} else if (value > (SSIZE_T)iLimitMax || value < iLimitMin) {
-													ltprintf("Value limits exceeded: (%I64d, %I64u): %s", iLimitMin, iLimitMax, patchValueC);
-													patch = false;
-												} else {
-													bytes = new unsigned char[iLength];
-													memcpy(bytes, &value, iLength);
-												}
-											} else {
-												size_t value = strtoull(patchValueC, &endPtr, 0);
-												if (endPtr != patchValueC + patchValue.size()) {
-													ltprintf("Malformed patch input: Patch value could not be parsed: %s", patchData.c_str());
-													patch = false;
-												} else if (value > iLimitMax || patchValue[0] == '-') {
-													ltprintf("Value limits exceeded: (%I64d, %I64u): %s", iLimitMin, iLimitMax, patchValueC);
-													patch = false;
-												} else {
-													bytes = new unsigned char[iLength];
-													memcpy(bytes, &value, iLength);
-												}
-											}
-										} else if (pType == PatchType::kRelative) {
-											if (std::find_if(argument.begin(), argument.end(), iswhitespace) == argument.end()) {
-												uintptr_t targetAddr;
-												std::unordered_map<std::string, uintptr_t>::const_iterator got = labels.find(patchValue);
-												if (got != labels.end()) {
-													targetAddr = got->second;
-												} else if (patchValue.find_first_not_of("0123456789ABCDEFabcdef") == std::string::npos) {
-													targetAddr = strtoull(patchValue.c_str(), NULL, 16);
-												} else {
-													ltprintf("Malformed patch input: Undefined label: %s", patchValue.c_str());
-													patch = false;
-												}
-												if (patch) {
-													ptrdiff_t offset = targetAddr - lastOffset - iLength;
-													if (iLength == 4) {
-														// Verify relative address fits within 32bits
-														if (offset > INT32_MAX || offset < INT32_MIN) {
-															ltprintf("Relative offset too large: %I64x - %I64x", targetAddr, lastOffset);
-															patch = false;
-														}
-													}
-													if (patch) {
-														bytes = new unsigned char[iLength];
-														memcpy(bytes, &offset, iLength);
-													}
-												}
-											} else {
-												ltprintf("Malformed patch input: Labels cannot contain whitespace: %s", patchValue.c_str());
-												patch = false;
-											}
-										}
-										if (patch) {
-											// Add patch to list
-											PatchRecord *record = new PatchRecord;
-											record->offset = lastOffset;
-											record->length = iLength;
-											record->bytes = bytes;
-											patches.push_back(record);
-											lastOffset += iLength;
-										}
-									}
-								} else {
-									// Strip uninportant characters from patch data
-									patchData.erase(std::remove_if(patchData.begin(), patchData.end(), patchfilter), patchData.end());
-									// Validate patch input
-									if (patchData.find_first_not_of("0123456789ABCDEFabcdef") != std::string::npos) {
-										ltputs("Malformed patch input: Non hexadecimal characters in patch data");
-										patch = false;
-									} else if (patchData.size() % 2 != 0) {
-										if (!addressStr.empty()) {
-											ltprintf("Malformed patch input: Incomplete patch data for address %s", addressStr.c_str());
-										} else {
-											ltprintf("Malformed patch input: Incomplete patch data at %I64X", lastOffset);
-										}
-										patch = false;
-									} else if (patch) {
-										// Parse patch input
-										size_t hsize = patchData.size() / 2;
-										unsigned char *bytes = new unsigned char[hsize];
-										for (size_t i = 0; i < patchData.size(); i += 2) {
-											bytes[i / 2] = CharToByteUnsafe(patchData[i]) << 4 | CharToByteUnsafe(patchData[i + 1]);
-										}
-										PatchRecord *record = new PatchRecord;
-										record->offset = lastOffset;
-										record->bytes = bytes;
-										record->length = hsize;
-										patches.push_back(record);
-										lastOffset += hsize;
-									}
-								}
-							}
-						}
-					}
-					if (patch) {
-						// Apply memory patches
-						if (!patches.empty()) {
-							for (PatchRecord *record : patches) {
-								if (record->offset >= modInfo.SizeOfImage) {
-									ltprintf("Patching %I64d bytes at %p", record->length, hmodEXE + record->offset);
-								} else {
-									ltprintf("Patching %I64d bytes at %s+%I64X", record->length, hmodName, record->offset);
-								}
-								WriteBuffer(hmodEXE + record->offset, record->bytes, record->length);
-							}
-							lputs("\n");
-						} else {
-							ltputs("No patches found in file\n");
-						}
-					} else {
-						ltputs("Ignoring patch\n");
-					}
-					// Clean up memory
-					for (PatchRecord *precord : patches) {
-						delete[] precord->bytes;
-						delete precord;
-					}
-					patches.clear();
-					pfile.close();
-				} else {
-					ltputs("Failed to open patch file\n");
-				}
+				std::wstring patchPath = L"Mods\\Patches\\";
+				patchPath.append(ffd.cFileName);
+				patcher.Apply(patchPath);
 			}
 		} while (FindNextFileW(hFind, &ffd) != 0);
 		// Check if finished with error
