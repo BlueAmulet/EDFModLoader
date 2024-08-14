@@ -194,6 +194,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="OnlineLimit.cpp" />
     <ClCompile Include="proxy.c" />
   </ItemGroup>
   <ItemGroup>
@@ -202,6 +203,7 @@
   <ItemGroup>
     <ClInclude Include="..\HookLib\HookLib\HookLib\HookLib.h" />
     <ClInclude Include="LoggerTweaks.h" />
+    <ClInclude Include="OnlineLimit.h" />
     <ClInclude Include="PluginAPI.h" />
     <ClInclude Include="proxy.h" />
   </ItemGroup>
