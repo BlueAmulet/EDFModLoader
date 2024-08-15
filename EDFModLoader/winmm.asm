@@ -33,12 +33,12 @@ align 16
 ASMreadMissionSavaData proc
 
     checkOnline:
-        cmp ActiveModFolder, 0
-        je ofsE1D70 ; Allow online if mod folder is not activated.
-        test r8, r8
-        je ofsE1D70 ; If is 0, allow access to game
-        ; Otherwise crashes game
-        mov dword ptr [0], 0
+        cmp r8d, 1
+        je toCrash
+        cmp r8d, 3
+        je toCrash
+        cmp r8d, 5
+        je toCrash ; If is offline mode, allow access to game
     ofsE1D70:
         mov [rsp+18h], rbx
         push rbp
@@ -49,6 +49,9 @@ ASMreadMissionSavaData proc
         push r14
         push r15
         jmp readMissionSavaDataRetAddr
+    toCrash:
+        ; Otherwise crashes game
+        mov dword ptr [0], 0
         int 3
 
 ASMreadMissionSavaData ENDP
