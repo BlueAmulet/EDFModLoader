@@ -100,25 +100,13 @@ BOOLEAN EDFMLAPI RemoveHookWrap(void *Original) {
 }
 
 static void RemoveAllHooks(void) {
-	for (std::vector<void*>::iterator it = hooks.begin(); it != hooks.end();) {
-		void *hook = *it;
-		if (MH_DisableHook(hook)) {
-			it = hooks.erase(it);
-		} else {
-			// hook is HOOK_DATA->OriginalBeginning
-			// hook-16 is HOOK_DATA->OriginalFunction
-			// TODO: Fork HookLib and expose HOOK_DATA or add function to retrieve original address
-			PVOID address = *((PVOID*)hook - 16 / sizeof(PVOID));
-
-			HMODULE hmodDLL;
-			wchar_t DLLName[MAX_PATH];
-			GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)address, &hmodDLL);
-			GetModuleFileNameW(hmodDLL, DLLName, _countof(DLLName));
-			PathStripPathW(DLLName);
-
-			PLOG_ERROR << "Failed to remove " << DLLName << "+" << std::hex << ((ULONG_PTR)address - (ULONG_PTR)hmodDLL) << " hook";
-			it++;
-		}
+	if (MH_DisableHook(MH_ALL_HOOKS))
+	{
+		hooks.clear();
+	}
+	else
+	{
+		PLOG_WARNING << "Failed to remove hooks";
 	}
 }
 
@@ -424,7 +412,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		PluginInfo *selfInfo = new PluginInfo;
 		selfInfo->infoVersion = PluginInfo::MaxInfoVer;
 		selfInfo->name = "EDFModLoader";
-		selfInfo->version = PLUG_VER(1, 0, 9, 0);
+		selfInfo->version = PLUG_VER(1, 0, 9, 1);
 		PluginData *selfData = new PluginData;
 		selfData->info = selfInfo;
 		selfData->module = hModule;
