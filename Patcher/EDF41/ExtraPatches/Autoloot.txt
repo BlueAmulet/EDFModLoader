@@ -1,0 +1,23 @@
+; Author: metoxys
+; Based on a cheat table by anonymous
+; Loots weapon and armor boxes as soon as they spawn
+
+aob AutoLoot 0F2FC27668
+alloc LootCode 32
+
+LootCode:
+83 BF 98000000 01
+0F87 0E000000
+0F2F C2
+0F87 00000000
+E9 00000000
+0F2F C2
+0F86 00000000
+E9 00000000
+
+AutoLoot: E9
+AutoLoot+1: rel32! LootCode
+LootCode+12: rel32! AutoLoot+6D
+LootCode+17: rel32! AutoLoot+5
+LootCode+20: rel32! AutoLoot+6D
+LootCode+25: rel32! AutoLoot+5
