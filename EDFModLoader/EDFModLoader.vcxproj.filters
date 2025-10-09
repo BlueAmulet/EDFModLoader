@@ -21,6 +21,9 @@
     <ClCompile Include="proxy.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="OnlineLimit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <MASM Include="winmm.asm">
@@ -38,6 +41,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="LoggerTweaks.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="OnlineLimit.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

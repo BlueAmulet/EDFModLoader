@@ -17,6 +17,7 @@
 #include "proxy.h"
 #include "PluginAPI.h"
 #include "LoggerTweaks.h"
+#include "OnlineLimit.h"
 
 #include <windows.h>
 #include <shlwapi.h>
@@ -115,6 +116,7 @@ static BOOL LoadPluginsB = TRUE;
 static BOOL LoadASI = TRUE;
 static BOOL Redirect = TRUE;
 static BOOL GameLog = FALSE;
+extern "C" int ActiveModFolder = 0;
 
 // Pointer sets
 typedef struct {
@@ -272,6 +274,7 @@ static void *__fastcall crifsio_hook(void *unk1, oddstr *str, void *unk2) {
 		if (FileExistsW(modpath)) {
 			PLOG_DEBUG << "Redirecting access to " << modpath;
 			wstrassign_orig(str, modpath, newlen);
+			ActiveModFolder = 1;
 		}
 		delete[] modpath;
 	}
@@ -460,10 +463,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			}
 		}
 		FuncOffsets pointers = {};
+		int EDFversion = 0;
 		if (pointerSet != -1) {
 			PLOG_INFO << "Running under " << psets[pointerSet].ident;
 			pointers = psets[pointerSet].pointers;
 			plugFunc = psets[pointerSet].plugfunc;
+			EDFversion = psets[pointerSet].version;
 		} else if (lstrcmpiA(hmodName, "EDF6.exe") == 0) {
 			PLOG_INFO << "Running under EDF6";
 			plugFunc = "EML6_Load";
@@ -516,6 +521,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 			if (pointers.gamelog == NULL) {
 				PLOG_ERROR << "Failed to locate game debug logging function";
 			}
+
+			scanner = LightningScanner::Scanner("4833C44889451F44894DBF4D63F04C8BFA48895597488BF1488D4DE7");
+			uintptr_t checkModeType = ScanPtr(scanner.Find(hmodEXE, ScanRange));
+			if (pointers.gamelog == NULL) {
+				pointers.redirect = NULL;
+				PLOG_ERROR << "Disallow mod folders";
+			} else {
+				EDF6OnlineRoomLimit(hmodEXE, (checkModeType - (0xE2993 - 0xE2970)));
+			}
 		} else {
 			PLOG_ERROR << "Failed to determine what exe is running";
 			break;
@@ -538,6 +552,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 		wstrassign_orig = (wstrassign_func)((PBYTE)hmodEXE + pointers.wstrassign);
 		if (pointers.wstrassign) {
 			SetupHook(pointers.redirect, (PVOID*)&crifsio_orig, crifsio_hook, "Mods folder redirector", Redirect);
+			// Limit the creation of public rooms.
+			if (EDFversion == 5) {
+				EDF5OnlineRoomLimit(hmodEXE);
+			}
 		} else {
 			PLOG_INFO << "Skipping unsupported " << hmodName << " hook (Mods folder redirector, no std::wstring::assign)";
 		}

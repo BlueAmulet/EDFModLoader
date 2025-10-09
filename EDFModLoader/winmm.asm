@@ -1,5 +1,7 @@
 .data
 extern PA : qword
+extern ActiveModFolder : dword
+extern readMissionSavaDataRetAddr : qword
 
 extern gamelog_hook_main : proto
 
@@ -22,8 +24,39 @@ extern save_xmm5 : OWORD
 
 .code
 runASM proc
-jmp qword ptr [PA]
+        jmp qword ptr [PA]
+        int 3
 runASM endp
+
+align 16
+
+ASMreadMissionSavaData proc
+
+    checkOnline:
+        cmp r8d, 1
+        je toCrash
+        cmp r8d, 3
+        je toCrash
+        cmp r8d, 5
+        je toCrash ; If is offline mode, allow access to game
+    ofsE1D70:
+        mov [rsp+18h], rbx
+        push rbp
+        push rsi
+        push rdi
+        push r12
+        push r13
+        push r14
+        push r15
+        jmp readMissionSavaDataRetAddr
+    toCrash:
+        ; Otherwise crashes game
+        mov dword ptr [0], 0
+        int 3
+
+ASMreadMissionSavaData ENDP
+
+align 16
 
 ; The original function normally doesn't touch any registers, or do anything.
 ; The code that calls this function is optimized for that.
