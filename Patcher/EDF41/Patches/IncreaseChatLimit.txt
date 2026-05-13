@@ -5,5 +5,5 @@ aob ChatLimit 48C7450F200000004533C0488D15????????488D4DE7
 aob ChatWindowWidth BB????????3BCB0F4FD9
 ChatWindowWidth+8: 4C        ; CMOVG (0F 4F) -> CMOVL (0F 4C)
 
-ChatLimit+4: s32! 90         ; chat character limit (default 32)
+ChatLimit+4: s32! 64         ; chat character limit (default 32)
 ChatWindowWidth+1: s32! 1200 ; textbox width (default 400)

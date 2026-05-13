@@ -1,0 +1,30 @@
+; Collection of performance improvements
+
+; Author: metoxys
+; This stops the ingame text chat from evaluating how wide the text is, meaning that the gaps between characters stays constant
+; Without this change, there is a catastrophic performance bottleneck as UTF-16 wcslen is used several times per frame for every single string in the chat history
+; Later games don't use this "fit all text in this single-line box" approach, they use line breaks instead
+
+aob TextChatFitTextFlag F3 0F 10 0D 9F 78 5F 00 F3 0F 11 4D 84 C7 44 24 30 04 00 00 00 F3 0F
+TextChatFitTextFlag+11: 00 00 00 00
+
+; Author: metoxys
+; The equipment screen has a separate chat-history measurement pass even though the chat is not displayed
+; With long chat history entries, this means large UTF-16 strings were scalled every frame for no visible benefit whatsoever
+; This here preserves the measurement call itself but redirects it to measure an empty string instead of the actual chat message
+
+aob EquipScreenChatMeasure 49 8B CD E8 55 CE 06 00 F3 0F 10 45 94
+alloc EquipScreenFix 1000 EquipScreenChatMeasure
+
+EquipScreenFix:
+48 8D 55 98
+49 8B CD
+E8
+rel32! 52BD10
+E9
+rel32! EquipScreenChatMeasure+8
+
+EquipScreenChatMeasure:
+E9
+rel32! EquipScreenFix
+90 90 90
