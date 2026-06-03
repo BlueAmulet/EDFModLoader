@@ -1,0 +1,86 @@
+; Author: metoxys
+; By default, the only way to sprint as a Ranger is to hold down the relevant button, there is no "toggle" setting
+; This mod makes it so that sprint is toggled on or off by the relevant button
+; Edge cases have been tested quite extensively, but if you run into any issues, please inform the mod author
+
+aob rangerSprintHeldCopy 88 86 5C 0B 00 00 40 84 ED 74 0A
+EAD048:
+label AssultSoldierVtable
+
+alloc sprinting 147 rangerSprintHeldCopy
+
+sprinting:
+label toggleState
+00
+label prevRealHeld
+00
+label prevSprintActive
+00
+label toggleCode
+41 53 ; push r11
+4C 8D 1D ; lea r11,
+rel32! AssultSoldierVtable
+4C 39 1E ; cmp qword ptr [rsi],r11
+41 5B ; pop r11
+75 60 ; jne notAssultSoldier
+80 3D ; cmp byte ptr [prevSprintActive],00
+rel32! prevSprintActive-1
+00
+74 10 ; je noExternalCancel
+80 BE 40 1A 00 00 00 ; cmp byte ptr [rsi+00001A40],00
+75 07 ; jne noExternalCancel
+C6 05 ; mov byte ptr [toggleState],00
+rel32! toggleState-1
+00
+
+; noExternalCancel:
+84 C0 ; test al,al
+74 19 ; je realReleased
+80 3D ; cmp byte ptr [prevRealHeld],00
+rel32! prevRealHeld-1
+00
+75 07 ; jne noNewPress
+80 35 ; xor byte ptr [toggleState],01
+rel32! toggleState-1
+01
+
+; noNewPress:
+C6 05 ; mov byte ptr [prevRealHeld],01
+rel32! prevRealHeld-1
+01
+EB 07 ; jmp applyVirtual
+
+; realReleased:
+C6 05 ; mov byte ptr [prevRealHeld],00
+rel32! prevRealHeld-1
+00
+
+; applyVirtual:
+8A 05 ; mov al,byte ptr [toggleState]
+rel32! toggleState
+88 86 5B 0B 00 00 ; mov byte ptr [rsi+00000B5B],al
+88 86 5C 0B 00 00 ; mov byte ptr [rsi+00000B5C],al
+8A 86 40 1A 00 00 ; mov al,byte ptr [rsi+00001A40]
+88 05 ; mov byte ptr [prevSprintActive],al
+rel32! prevSprintActive
+E9
+rel32! rangerSprintHeldCopy+6
+
+; notAssultSoldier:
+88 86 5C 0B 00 00 ; mov byte ptr [rsi+00000B5C],al
+C6 05 ; mov byte ptr [toggleState],00
+rel32! toggleState-1
+00
+C6 05 ; mov byte ptr [prevRealHeld],00
+rel32! prevRealHeld-1
+00
+C6 05 ; mov byte ptr [prevSprintActive],00
+rel32! prevSprintActive-1
+00
+E9
+rel32! rangerSprintHeldCopy+6
+
+rangerSprintHeldCopy:
+E9
+rel32! toggleCode
+90
