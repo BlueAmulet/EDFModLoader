@@ -1,0 +1,23 @@
+; Author: metoxys
+; Skips all logos on game startup, launches the game straight into the title screen
+; This is achieved by intercepting at the exact point where MAINSCRIPT.AS is in memory and literally commenting out the "CompanyLogo();" call
+
+aob companyLogoHook 44 8B CE 4D 8B C6 48 8B D0 48 8B CB E8 90 9F B7 00
+alloc overwrite 35 companyLogoHook
+
+overwrite:
+81 FE D2 DD 00 00 ; cmp esi,0000DDD2
+75 0A ; jne original
+66 41 C7 86 F8 2E 00 00 2F 2F ; mov word ptr [r14+2EF8],2F2F
+; original:
+44 8B CE ; mov r9d,esi
+4D 8B C6 ; mov r8,r14
+48 8B D0 ; mov rdx,rax
+48 8B CB ; mov rcx,rbx
+E9
+rel32! companyLogoHook+C
+
+companyLogoHook:
+E9
+rel32! overwrite
+90 90 90 90 90 90 90
